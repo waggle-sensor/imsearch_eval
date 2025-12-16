@@ -141,6 +141,29 @@ imsearch_eval/
 
 ## Usage
 
+### Dataset schema (required columns)
+
+Your `DatasetLoader.load()` must return a pandas `DataFrame`. **Column names can differ**, but the *meaning* of the fields below must stay constant because they’re used to compute metrics.
+
+`BenchmarkEvaluator` gets the required column names from your `DatasetLoader`:
+- `get_query_column()` → query text
+- `get_query_id_column()` → query/group id (unique id for each unique query)
+- `get_relevance_column()` → relevance label (1/0)
+- `get_metadata_columns()` → optional metadata copied into the per-query stats output
+
+#### Required semantic fields
+
+- **Query text**: The text sent to `VectorDBAdapter.search(...)`.
+- **Query id**: A stable identifier used to group rows belonging to the same query.
+- **Relevance label**: Binary label for each row/item (1 = relevant, 0 = not relevant). Used for precision/recall/NDCG.
+
+#### Optional (but common) fields for image search
+
+- **Image**: A file path/URL/bytes you use when building embeddings or generating captions (consumed by your `DataLoader` / adapter, not the core evaluator).
+- **Ranking score(s)**: If your search results include a score column like `rerank_score`, `clip_score`, `score`, or `distance`, the evaluator will use the first one it finds to compute NDCG.
+- **License / rights_holder**: Useful when combining datasets, otherwise optional.
+- **Additional metadata**: Any extra fields you want to use for result breakdowns (e.g., animalspecies category). These do **not** change the metrics; they’re just copied into the results.
+
 ### Basic Usage Pattern
 
 1. **Import adapters**:
