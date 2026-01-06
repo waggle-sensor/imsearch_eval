@@ -161,14 +161,14 @@ class ModelProvider(ABC):
         pass
     
     @abstractmethod
-    def generate_caption(self, image: Image.Image, model_name: str = "default") -> str:
+    def generate_caption(self, image: Image.Image, prompt: str , model_name: str = "default") -> str:
         """
         Generate a caption for an image.
         
         Args:
             image: PIL Image to caption
+            prompt: Prompt to use for the model
             model_name: Name of the model to use
-            
         Returns:
             Generated caption string
         """

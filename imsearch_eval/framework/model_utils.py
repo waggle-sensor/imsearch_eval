@@ -68,6 +68,7 @@ class ModelUtils(ABC):
     def generate_caption(
         self,
         image: Image.Image,
+        prompt: str,
         model_name: str = "gemma3"
     ) -> Optional[str]:
         """
@@ -75,8 +76,8 @@ class ModelUtils(ABC):
         
         Args:
             image: PIL Image to caption
+            prompt: Prompt to use for the model
             model_name: Name of the model to use (e.g., "gemma3", "qwen2_5")
-        
         Returns:
             Generated caption string or None on error
         """

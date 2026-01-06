@@ -81,6 +81,7 @@ class TritonModelUtils(ModelUtils):
     def generate_caption(
         self,
         image: Image.Image,
+        prompt: str,
         model_name: str = "gemma3"
     ) -> Optional[str]:
         """
@@ -88,15 +89,15 @@ class TritonModelUtils(ModelUtils):
         
         Args:
             image: PIL Image to caption
+            prompt: Prompt to use for the model
             model_name: Name of the model to use ("gemma3", "qwen2_5")
-        
         Returns:
             Generated caption string or None on error
         """
         if model_name == "gemma3":
-            return self.gemma3_run_model(image)
+            return self.gemma3_run_model(image, prompt)
         elif model_name == "qwen2_5":
-            return self.qwen2_5_run_model(image)
+            return self.qwen2_5_run_model(image, prompt)
         else:
             raise ValueError(f"Unknown caption model name: {model_name}")
     
@@ -260,28 +261,32 @@ class TritonModelUtils(ModelUtils):
         
         return embedding
     
-    def gemma3_run_model(self, image: Image.Image) -> Optional[str]:
+    def gemma3_run_model(self, image: Image.Image, prompt: str) -> Optional[str]:
         """
         Generate a caption for an image using Gemma3 model served via Triton.
         
         Args:
             image: PIL Image to caption
-        
+            prompt: Prompt to use for the model
         Returns:
             Generated caption string or None on error
         """
-        # Prepare image input
+        # Prepare inputs
         image_np = np.array(image).astype(np.float32)
-        
-        # Create Triton input objects
+        task_prompt_bytes = prompt.encode("utf-8")
+
+        # Create Triton IO objects
         inputs = [
-            TritonClient.InferInput("image", list(image_np.shape), "FP32")
+            TritonClient.InferInput("image", list(image_np.shape), "FP32"),
+            TritonClient.InferInput("prompt", [1], "BYTES"),
         ]
-        inputs[0].set_data_from_numpy(image_np)
-        
         outputs = [
             TritonClient.InferRequestedOutput("answer")
         ]
+
+        # Add tensors to inputs
+        inputs[0].set_data_from_numpy(image_np)
+        inputs[1].set_data_from_numpy(np.array([task_prompt_bytes], dtype="object"))
         
         # Run inference
         try:
@@ -301,28 +306,32 @@ class TritonModelUtils(ModelUtils):
             logging.error(f"Error during Gemma3 inference: {str(e)}")
             return None
     
-    def qwen2_5_run_model(self, image: Image.Image) -> Optional[str]:
+    def qwen2_5_run_model(self, image: Image.Image, prompt: str) -> Optional[str]:
         """
         Generate a caption for an image using Qwen2.5-VL model served via Triton.
         
         Args:
             image: PIL Image to caption
-        
+            prompt: Prompt to use for the model
         Returns:
             Generated caption string or None on error
         """
-        # Prepare image input
+        # Prepare inputs
         image_np = np.array(image).astype(np.float32)
-        
-        # Create Triton input objects
+        task_prompt_bytes = prompt.encode("utf-8")
+
+        # Create Triton IO objects
         inputs = [
-            TritonClient.InferInput("image", list(image_np.shape), "FP32")
+            TritonClient.InferInput("image", list(image_np.shape), "FP32"),
+            TritonClient.InferInput("prompt", [1], "BYTES"),
         ]
-        inputs[0].set_data_from_numpy(image_np)
-        
         outputs = [
             TritonClient.InferRequestedOutput("answer")
         ]
+
+        # Add tensors to inputs
+        inputs[0].set_data_from_numpy(image_np)
+        inputs[1].set_data_from_numpy(np.array([task_prompt_bytes], dtype="object"))
         
         # Run inference
         try:
@@ -376,17 +385,17 @@ class TritonModelProvider(ModelProvider):
         """
         return self.model_utils.calculate_embedding(text, image, model_name)
     
-    def generate_caption(self, image: Image.Image, model_name: str = "gemma3") -> str:
+    def generate_caption(self, image: Image.Image, prompt: str , model_name: str = "gemma3") -> str:
         """
         Generate a caption for an image.
         
         Args:
             image: PIL Image to caption
+            prompt: Prompt to use for the model
             model_name: Name of the model to use ("gemma3", "qwen2_5")
-            
         Returns:
             Generated caption string
         """
-        result = self.model_utils.generate_caption(image, model_name)
+        result = self.model_utils.generate_caption(image, prompt, model_name)
         return result if result else ""
 
