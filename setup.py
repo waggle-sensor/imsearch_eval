@@ -45,7 +45,7 @@ except FileNotFoundError:
 
 setup(
     name="imsearch_eval",
-    version="0.1.2",
+    version="0.1.3",
     description="Abstract benchmarking framework for vector databases and models",
     long_description=long_description,
     long_description_content_type="text/markdown",
