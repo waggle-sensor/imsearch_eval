@@ -231,62 +231,6 @@ class DatasetLoader(ABC):
         """
         return []
 
-
-class DataLoader(ABC):
-    """Abstract interface for loading data into vector databases."""
-    
-    @abstractmethod
-    def process_item(
-        self,
-        item: Dict[str, Any],
-        model_provider: ModelProvider
-    ) -> Dict[str, Any]:
-        """
-        Process a single dataset item and prepare it for vector database insertion.
-        
-        Args:
-            item: Dictionary containing raw dataset item
-            model_provider: Model provider for generating embeddings/captions
-            
-        Returns:
-            Dictionary with 'properties' and optionally 'vector' keys for insertion
-        """
-        pass
-    
-    @abstractmethod
-    def get_schema_config(self) -> Dict[str, Any]:
-        """
-        Get the schema configuration for creating the collection.
-        
-        Returns:
-            Dictionary containing schema configuration
-        """
-        pass
-    
-    def process_batch(
-        self,
-        batch: List[Dict[str, Any]],
-        model_provider: ModelProvider
-    ) -> List[Dict[str, Any]]:
-        """
-        Process a batch of items. Default implementation processes items sequentially.
-        Override for parallel processing.
-        
-        Args:
-            batch: List of dataset items
-            model_provider: Model provider for generating embeddings/captions
-            
-        Returns:
-            List of processed items ready for insertion
-        """
-        processed_items = []
-        for item in batch:
-            processed_item = self.process_item(item, model_provider)
-            if processed_item is not None:
-                processed_items.append(processed_item)
-        return processed_items
-
-
 class Config(ABC):
     """Abstract interface for configuration/hyperparameters."""
     
@@ -312,6 +256,67 @@ class Config(ABC):
             Dictionary of all configuration values
         """
         return {}
+
+class DataLoader(ABC):
+    """
+    Abstract interface for loading data into vector databases.
+    """
+    
+    def __init__(self, config: Config, model_provider: ModelProvider):
+        """
+        Initialize the DataLoader with a configuration.
+        
+        Args:
+            config: Configuration object implementing the Config interface
+            model_provider: Model provider for generating embeddings/captions
+        """
+        self.config = config
+        self.model_provider = model_provider
+    
+    @abstractmethod
+    def process_item(
+        self,
+        item: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Process a single dataset item and prepare it for vector database insertion.
+        
+        Args:
+            item: Dictionary containing raw dataset item
+        Returns:
+            Dictionary with 'properties' and optionally 'vector' keys for insertion
+        """
+        pass
+    
+    @abstractmethod
+    def get_schema_config(self) -> Dict[str, Any]:
+        """
+        Get the schema configuration for creating the collection.
+        
+        Returns:
+            Dictionary containing schema configuration
+        """
+        pass
+    
+    def process_batch(
+        self,
+        batch: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """
+        Process a batch of items. Default implementation processes items sequentially.
+        Override for parallel processing.
+        
+        Args:
+            batch: List of dataset items
+        Returns:
+            List of processed items ready for insertion
+        """
+        processed_items = []
+        for item in batch:
+            processed_item = self.process_item(item)
+            if processed_item is not None:
+                processed_items.append(processed_item)
+        return processed_items
 
 
 class Query(ABC):
