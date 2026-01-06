@@ -280,13 +280,13 @@ class TritonModelUtils(ModelUtils):
         inputs[0].set_data_from_numpy(image_np)
         
         outputs = [
-            TritonClient.InferRequestedOutput("caption")
+            TritonClient.InferRequestedOutput("answer")
         ]
         
         # Run inference
         try:
             results = self.triton_client.infer(model_name="gemma3", inputs=inputs, outputs=outputs)
-            caption = results.as_numpy("caption")
+            caption = results.as_numpy("answer")
             
             # Handle different return types
             if isinstance(caption, np.ndarray):
@@ -321,13 +321,13 @@ class TritonModelUtils(ModelUtils):
         inputs[0].set_data_from_numpy(image_np)
         
         outputs = [
-            TritonClient.InferRequestedOutput("caption")
+            TritonClient.InferRequestedOutput("answer")
         ]
         
         # Run inference
         try:
             results = self.triton_client.infer(model_name="qwen2_5", inputs=inputs, outputs=outputs)
-            caption = results.as_numpy("caption")
+            caption = results.as_numpy("answer")
             
             # Handle different return types
             if isinstance(caption, np.ndarray):

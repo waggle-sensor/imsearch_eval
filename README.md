@@ -162,7 +162,7 @@ Your `DatasetLoader.load()` must return a pandas `DataFrame`. **Column names can
 - **Image**: A file path/URL/bytes you use when building embeddings or generating captions (consumed by your `DataLoader` / adapter, not the core evaluator).
 - **Ranking score(s)**: If your search results include a score column like `rerank_score`, `clip_score`, `score`, or `distance`, the evaluator will use the first one it finds to compute NDCG.
 - **License / rights_holder**: Useful when combining datasets, otherwise optional.
-- **Additional metadata**: Any extra fields you want to use for result breakdowns (e.g., animalspecies category). These do **not** change the metrics; they’re just copied into the results.
+- **Additional metadata**: Any extra fields you want to use for result breakdowns (e.g., animalspecies category). These do **not** change the metrics; they’re just copied into the results table.
 
 ### Basic Usage Pattern
 
