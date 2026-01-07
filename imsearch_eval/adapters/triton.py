@@ -271,13 +271,15 @@ class TritonModelUtils(ModelUtils):
         Returns:
             Generated caption string or None on error
         """
-        # Prepare inputs
-        image_np = np.array(image).astype(np.float32)
+        # Prepare inputs for Triton
+        image_width, image_height = image.size
+        image_np = np.array(image).astype(np.uint8)
         task_prompt_bytes = prompt.encode("utf-8")
 
-        # Create Triton IO objects
+        # Prepare inputs & outputs for Triton
+        # NOTE: if you enable max_batch_size, leading number is batch size, example [1,1] 1 is batch size
         inputs = [
-            TritonClient.InferInput("image", list(image_np.shape), "FP32"),
+            TritonClient.InferInput("image", [image_height, image_width, 3], "UINT8"),
             TritonClient.InferInput("prompt", [1], "BYTES"),
         ]
         outputs = [
@@ -287,23 +289,19 @@ class TritonModelUtils(ModelUtils):
         # Add tensors to inputs
         inputs[0].set_data_from_numpy(image_np)
         inputs[1].set_data_from_numpy(np.array([task_prompt_bytes], dtype="object"))
-        
-        # Run inference
+
+        # Perform inference
         try:
-            results = self.triton_client.infer(model_name="gemma3", inputs=inputs, outputs=outputs)
-            caption = results.as_numpy("answer")
-            
-            # Handle different return types
-            if isinstance(caption, np.ndarray):
-                if caption.dtype == object:
-                    # If it's a bytes array, decode it
-                    return caption[0].decode("utf-8") if len(caption) > 0 else ""
-                else:
-                    return str(caption[0]) if len(caption) > 0 else ""
-            else:
-                return str(caption) if caption else ""
+            response = self.triton_client.infer(model_name="gemma3", inputs=inputs, outputs=outputs)
+
+            # Get the result
+            answer = response.as_numpy("answer")[0]
+            answer_str = answer.decode("utf-8")
+
+            logging.info(f'[GEMMA3] Final Generated Description: {answer_str}')
+            return answer_str
         except Exception as e:
-            logging.error(f"Error during Gemma3 inference: {str(e)}")
+            logging.error(f"[GEMMA3] Error during Gemma3 inference: {str(e)}")
             return None
     
     def qwen2_5_run_model(self, image: Image.Image, prompt: str) -> Optional[str]:
@@ -316,13 +314,15 @@ class TritonModelUtils(ModelUtils):
         Returns:
             Generated caption string or None on error
         """
-        # Prepare inputs
-        image_np = np.array(image).astype(np.float32)
+        # Prepare inputs for Triton
+        image_width, image_height = image.size
+        image_np = np.array(image).astype(np.uint8)
         task_prompt_bytes = prompt.encode("utf-8")
 
-        # Create Triton IO objects
+        # Prepare inputs & outputs for Triton
+        # NOTE: if you enable max_batch_size, leading number is batch size, example [1,1] 1 is batch size
         inputs = [
-            TritonClient.InferInput("image", list(image_np.shape), "FP32"),
+            TritonClient.InferInput("image", [image_height, image_width, 3], "UINT8"),
             TritonClient.InferInput("prompt", [1], "BYTES"),
         ]
         outputs = [
@@ -333,24 +333,19 @@ class TritonModelUtils(ModelUtils):
         inputs[0].set_data_from_numpy(image_np)
         inputs[1].set_data_from_numpy(np.array([task_prompt_bytes], dtype="object"))
         
-        # Run inference
+        # Perform inference
         try:
-            results = self.triton_client.infer(model_name="qwen2_5", inputs=inputs, outputs=outputs)
-            caption = results.as_numpy("answer")
-            
-            # Handle different return types
-            if isinstance(caption, np.ndarray):
-                if caption.dtype == object:
-                    # If it's a bytes array, decode it
-                    return caption[0].decode("utf-8") if len(caption) > 0 else ""
-                else:
-                    return str(caption[0]) if len(caption) > 0 else ""
-            else:
-                return str(caption) if caption else ""
-        except Exception as e:
-            logging.error(f"Error during Qwen2.5 inference: {str(e)}")
-            return None
+            response = self.triton_client.infer(model_name="qwen2_5_vl", inputs=inputs, outputs=outputs)
 
+            # Get the result
+            answer = response.as_numpy("answer")[0]
+            answer_str = answer.decode("utf-8")
+
+            logging.info(f'[QWEN2_5_VL] Final Generated Description: {answer_str}')
+            return answer_str
+        except Exception as e:
+            logging.error(f"[QWEN2_5_VL] Error during Qwen2.5-VL inference: {str(e)}")
+            return None
 
 class TritonModelProvider(ModelProvider):
     """Triton model provider using TritonModelUtils."""

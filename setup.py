@@ -7,6 +7,8 @@ Adapters are available as optional dependencies.
 
 from setuptools import setup, find_packages
 
+VERSION = "0.1.4"
+
 # Core dependencies (always required)
 CORE_DEPS = [
     "pandas>=1.5.0",
@@ -45,7 +47,7 @@ except FileNotFoundError:
 
 setup(
     name="imsearch_eval",
-    version="0.1.3",
+    version=VERSION,
     description="Abstract benchmarking framework for vector databases and models",
     long_description=long_description,
     long_description_content_type="text/markdown",
