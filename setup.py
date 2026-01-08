@@ -7,7 +7,7 @@ Adapters are available as optional dependencies.
 
 from setuptools import setup, find_packages
 
-VERSION = "0.1.4"
+VERSION = "0.1.5"
 
 # Core dependencies (always required)
 CORE_DEPS = [
@@ -47,7 +47,7 @@ except FileNotFoundError:
 
 setup(
     name="imsearch_eval",
-    version=VERSION,
+    version="0.1.4",
     description="Abstract benchmarking framework for vector databases and models",
     long_description=long_description,
     long_description_content_type="text/markdown",
