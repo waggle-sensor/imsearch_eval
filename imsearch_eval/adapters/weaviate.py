@@ -456,7 +456,6 @@ class WeaviateAdapter(VectorDBAdapter):
     
     def create_collection(
         self,
-        collection_name: str,
         schema_config: Dict[str, Any],
         **kwargs
     ) -> bool:
@@ -464,8 +463,7 @@ class WeaviateAdapter(VectorDBAdapter):
         Create a Weaviate collection.
         
         Args:
-            collection_name: Name of the collection to create
-            schema_config: Dictionary containing schema configuration
+            schema_config: Dictionary containing schema configuration, must follow weaviate collection creation schema
             **kwargs: Additional parameters
         
         Returns:
@@ -473,6 +471,10 @@ class WeaviateAdapter(VectorDBAdapter):
         """
         try:
             from weaviate.classes.config import Configure, Property
+
+            if "name" not in schema_config:
+                raise ValueError("Collection name is required in schema_config")
+            collection_name = schema_config["name"]
             
             # Delete existing collection if it exists
             if collection_name in self.weaviate_client.collections.list_all():
@@ -483,21 +485,8 @@ class WeaviateAdapter(VectorDBAdapter):
                 while collection_name in self.weaviate_client.collections.list_all():
                     time.sleep(1)
             
-            # Extract schema components
-            description = schema_config.get("description", "")
-            properties = schema_config.get("properties", [])
-            vectorizer_config = schema_config.get("vectorizer_config", [])
-            reranker_config = schema_config.get("reranker_config", None)
-            
-            # Create collection
-            self.weaviate_client.collections.create(
-                name=collection_name,
-                description=description,
-                properties=properties,
-                vectorizer_config=vectorizer_config,
-                reranker_config=reranker_config
-            )
-            
+            # Create collection - unpack schema_config directly
+            self.weaviate_client.collections.create(**schema_config)
             logging.debug(f"Collection '{collection_name}' successfully created.")
             return True
             

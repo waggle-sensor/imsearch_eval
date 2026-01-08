@@ -67,7 +67,6 @@ class VectorDBAdapter(ABC):
     @abstractmethod
     def create_collection(
         self,
-        collection_name: str,
         schema_config: Dict[str, Any],
         **kwargs
     ) -> bool:
@@ -75,7 +74,6 @@ class VectorDBAdapter(ABC):
         Create a collection/index in the vector database.
         
         Args:
-            collection_name: Name of the collection to create
             schema_config: Dictionary containing schema configuration
             **kwargs: Additional collection-specific parameters
             
