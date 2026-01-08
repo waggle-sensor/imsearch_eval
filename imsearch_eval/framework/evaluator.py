@@ -67,7 +67,8 @@ class BenchmarkEvaluator:
         collection_name: str = "default",
         query_method: str = "search",
         limit: int = 25,
-        score_columns: List[str] = None
+        score_columns: List[str] = None,
+        target_vector: str = "default"
     ):
         """
         Initialize the benchmark evaluator.
@@ -80,6 +81,7 @@ class BenchmarkEvaluator:
             query_method: Method name to use for querying (for logging/debugging)
             limit: Maximum number of results to return per query
             score_columns: List of column names to try for NDCG computation (in order of preference)
+            target_vector: Name of the vector space to search in
         """
         self.vector_db = vector_db
         self.model_provider = model_provider
@@ -88,6 +90,7 @@ class BenchmarkEvaluator:
         self.query_method = query_method
         self.limit = limit
         self.score_columns = score_columns or ["rerank_score", "clip_score", "score", "distance"]
+        self.target_vector = target_vector
     
     def evaluate_query(
         self, 
@@ -120,6 +123,7 @@ class BenchmarkEvaluator:
             query_result = self.vector_db.search(
                 query=query,
                 collection_name=self.collection_name,
+                target_vector=self.target_vector,
                 limit=self.limit,
                 query_method=self.query_method
             )
