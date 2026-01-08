@@ -78,7 +78,7 @@ evaluator = BenchmarkEvaluator(
 
 The framework is organized into two main components:
 
-1. **Framework** (`imsearch_eval/framework/`): Abstract interfaces and evaluation logic (dataset-agnostic)
+1. **Framework** (`imsearch_eval/framework/`): Abstract interfaces and evaluation logic (dataset-agnostic, model-agnostic, vector database-agnostic)
 2. **Adapters** (`imsearch_eval/adapters/`): Shared concrete implementations for vector databases and models
 
 ### Package Structure
