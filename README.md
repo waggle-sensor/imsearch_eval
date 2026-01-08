@@ -135,7 +135,7 @@ imsearch_eval/
 
 ### Evaluator (`imsearch_eval.framework.evaluator`)
 
-- **`BenchmarkEvaluator`**: Main evaluation class that works with any combination of adapters and dataset loaders
+- **`BenchmarkEvaluator`**: Main evaluation class that works with any combination of adapters and benchmark datasets
 - Computes metrics: NDCG, precision, recall, accuracy
 - Supports parallel query processing
 
