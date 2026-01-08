@@ -17,10 +17,19 @@ except ImportError:
     WeaviateAdapter = None
     WeaviateQuery = None
 
+try:
+    from .milvus import MilvusAdapter, MilvusQuery
+    _AVAILABLE_ADAPTERS['milvus'] = ['MilvusAdapter', 'MilvusQuery']
+except ImportError:
+    MilvusAdapter = None
+    MilvusQuery = None
+
 # Build __all__ based on what's available
 __all__ = []
 if TritonModelProvider is not None:
     __all__.extend(['TritonModelProvider', 'TritonModelUtils'])
 if WeaviateAdapter is not None:
     __all__.extend(['WeaviateAdapter', 'WeaviateQuery'])
+if MilvusAdapter is not None:
+    __all__.extend(['MilvusAdapter', 'MilvusQuery'])
 

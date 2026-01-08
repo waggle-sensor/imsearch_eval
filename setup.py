@@ -7,7 +7,7 @@ Adapters are available as optional dependencies.
 
 from setuptools import setup, find_packages
 
-VERSION = "0.1.7"
+VERSION = "0.1.8"
 
 # Core dependencies (always required)
 CORE_DEPS = [
@@ -24,13 +24,15 @@ EXTRAS = {
     ],
     "weaviate": [
         "weaviate-client>=4.0.0",
-        # Weaviate adapter depends on TritonModelUtils, so include triton deps
-        "tritonclient[grpc]>=2.0.0",
+    ],
+    "milvus": [
+        "pymilvus>=2.6.6",
     ],
     # Convenience extra that includes everything
     "all": [
         "tritonclient[grpc]>=2.0.0",
         "weaviate-client>=4.0.0",
+        "pymilvus>=2.6.6",
     ],
     # For development
     "dev": [
