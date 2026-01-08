@@ -177,8 +177,8 @@ class ModelProvider(ABC):
         pass
 
 
-class DatasetLoader(ABC):
-    """Abstract interface for dataset loaders."""
+class BenchmarkDataset(ABC):
+    """Abstract interface for benchmark datasets."""
     
     @abstractmethod
     def load(self, split: str = "test", **kwargs) -> pd.DataFrame:

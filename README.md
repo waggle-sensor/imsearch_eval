@@ -64,11 +64,11 @@ vector_db = WeaviateAdapter(
 )
 model_provider = TritonModelProvider(triton_client=triton_client)
 
-# Use in evaluator (requires a DatasetLoader implementation)
+# Use in evaluator (requires a BenchmarkDataset implementation)
 evaluator = BenchmarkEvaluator(
     vector_db=vector_db,
     model_provider=model_provider,
-    dataset_loader=dataset_loader,  # Your DatasetLoader implementation
+    dataset=dataset,  # Your BenchmarkDataset implementation
     collection_name="my_collection",
     query_method="clip_hybrid_query"
 )
@@ -86,7 +86,7 @@ The framework is organized into two main components:
 ```
 imsearch_eval/
 ├── framework/                    # Abstract interfaces and evaluation logic
-│   ├── interfaces.py            # VectorDBAdapter, ModelProvider, Query, DatasetLoader, etc.
+│   ├── interfaces.py            # VectorDBAdapter, ModelProvider, Query, BenchmarkDataset, etc.
 │   ├── model_utils.py           # ModelUtils abstract interface
 │   └── evaluator.py            # BenchmarkEvaluator class
 │
@@ -109,7 +109,7 @@ imsearch_eval/
   - Each vector DB implementation can define its own query types via `query_method` parameter
 - **`ModelUtils`**: Abstract interface for model utilities (in `imsearch_eval.framework.model_utils`)
   - Methods: `calculate_embedding()`, `generate_caption()`
-- **`DatasetLoader`**: Abstract interface for dataset loaders
+- **`BenchmarkDataset`**: Abstract interface for benchmark datasets
 - **`DataLoader`**: Abstract interface for loading data into vector DBs
 - **`Config`**: Abstract interface for configuration/hyperparameters
 - **`QueryResult`**: Container for query results
@@ -143,9 +143,9 @@ imsearch_eval/
 
 ### Dataset schema (required columns)
 
-Your `DatasetLoader.load()` must return a pandas `DataFrame`. **Column names can differ**, but the *meaning* of the fields below must stay constant because they’re used to compute metrics.
+Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names can differ**, but the *meaning* of the fields below must stay constant because they’re used to compute metrics.
 
-`BenchmarkEvaluator` gets the required column names from your `DatasetLoader`:
+`BenchmarkEvaluator` gets the required column names from your `BenchmarkDataset`:
 - `get_query_column()` → query text
 - `get_query_id_column()` → query/group id (unique id for each unique query)
 - `get_relevance_column()` → relevance label (1/0)
@@ -159,7 +159,7 @@ Your `DatasetLoader.load()` must return a pandas `DataFrame`. **Column names can
 
 #### Optional (but common) fields for image search
 
-- **Image**: A file path/URL/bytes you use when building embeddings or generating captions (consumed by your `DataLoader` / adapter, not the core evaluator).
+- **Image**: A file path/URL/bytes you use when building embeddings or generating captions (consumed by your `BenchmarkDataset` / adapter, not the core evaluator).
 - **Ranking score(s)**: If your search results include a score column like `rerank_score`, `clip_score`, `score`, or `distance`, the evaluator will use the first one it finds to compute NDCG.
 - **License / rights_holder**: Useful when combining datasets, otherwise optional.
 - **Additional metadata**: Any extra fields you want to use for result breakdowns (e.g., animalspecies category). These do **not** change the metrics; they’re just copied into the results table.
@@ -188,12 +188,12 @@ Your `DatasetLoader.load()` must return a pandas `DataFrame`. **Column names can
    model_provider = TritonModelProvider(triton_client=triton_client)
    ```
 
-4. **Create dataset loader** (you need to implement this):
+4. **Create benchmark dataset** (you need to implement this):
    ```python
-   from imsearch_eval import DatasetLoader
+   from imsearch_eval import BenchmarkDataset
    import pandas as pd
    
-   class MyDatasetLoader(DatasetLoader):
+   class MyBenchmarkDataset(BenchmarkDataset):
        def load(self, split="test", **kwargs) -> pd.DataFrame:
            # Load your dataset
            return dataset_df
@@ -215,12 +215,12 @@ Your `DatasetLoader.load()` must return a pandas `DataFrame`. **Column names can
    ```python
    from imsearch_eval import BenchmarkEvaluator
    
-   dataset_loader = MyDatasetLoader()
+   dataset = MyBenchmarkDataset()
    
    evaluator = BenchmarkEvaluator(
        vector_db=vector_db,
        model_provider=model_provider,
-       dataset_loader=dataset_loader,
+       dataset=dataset,
        collection_name="my_collection",
        query_method="clip_hybrid_query"  # Query type for WeaviateQuery
    )
@@ -316,13 +316,13 @@ The `ModelProvider` and `ModelUtils` interfaces accept `model_name` parameters:
 
 ### Adding a New Dataset
 
-Create a loader implementing `DatasetLoader`:
+Create a benchmark dataset implementing `BenchmarkDataset`:
 
 ```python
-from imsearch_eval import DatasetLoader
+from imsearch_eval import BenchmarkDataset
 import pandas as pd
 
-class MyDatasetLoader(DatasetLoader):
+class MyBenchmarkDataset(BenchmarkDataset):
     def load(self, split="test", **kwargs) -> pd.DataFrame:
         # Load your dataset
         return dataset_df
@@ -347,7 +347,7 @@ class MyDatasetLoader(DatasetLoader):
 The framework uses abstract interfaces to ensure consistency and extensibility:
 
 1. **Framework defines interfaces** (`imsearch_eval.framework.interfaces`, `imsearch_eval.framework.model_utils`):
-   - `VectorDBAdapter`, `ModelProvider`, `Query`, `ModelUtils`, `DatasetLoader`, etc.
+   - `VectorDBAdapter`, `ModelProvider`, `Query`, `ModelUtils`, `BenchmarkDataset`, etc.
    - These define the contract that all implementations must follow
 
 2. **Adapters implement interfaces** (`imsearch_eval.adapters`):
@@ -405,7 +405,7 @@ caption = model_provider.generate_caption(image, model_name="gemma3")
 
 ## Key Features
 
-- **Dataset-Agnostic**: Works with any dataset by implementing `DatasetLoader`
+- **Dataset-Agnostic**: Works with any dataset by implementing `BenchmarkDataset`
 - **Extensible**: Easy to add new vector databases, models, and datasets
 - **Abstract Interfaces**: Clean separation between evaluation logic and implementations
 - **Reusable**: Framework code can be shared across all benchmarks

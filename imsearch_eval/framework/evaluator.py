@@ -8,7 +8,7 @@ from sklearn.metrics import ndcg_score
 from itertools import islice
 from concurrent.futures import ThreadPoolExecutor
 
-from .interfaces import VectorDBAdapter, ModelProvider, QueryResult, DatasetLoader
+from .interfaces import VectorDBAdapter, ModelProvider, QueryResult, BenchmarkDataset
 
 QUERY_BATCH_SIZE = int(os.environ.get("QUERY_BATCH_SIZE", 100))
 
@@ -63,7 +63,7 @@ class BenchmarkEvaluator:
         self, 
         vector_db: VectorDBAdapter,
         model_provider: ModelProvider,
-        dataset_loader: DatasetLoader,
+        dataset: BenchmarkDataset,
         collection_name: str = "default",
         query_method: str = "search",
         limit: int = 25,
@@ -76,7 +76,7 @@ class BenchmarkEvaluator:
         Args:
             vector_db: Vector database adapter instance
             model_provider: Model provider instance
-            dataset_loader: Dataset loader instance
+            dataset: Benchmark dataset instance
             collection_name: Name of the collection to search
             query_method: Method name to use for querying (for logging/debugging)
             limit: Maximum number of results to return per query
@@ -85,7 +85,7 @@ class BenchmarkEvaluator:
         """
         self.vector_db = vector_db
         self.model_provider = model_provider
-        self.dataset_loader = dataset_loader
+        self.dataset = dataset
         self.collection_name = collection_name
         self.query_method = query_method
         self.limit = limit
@@ -107,10 +107,10 @@ class BenchmarkEvaluator:
         Returns:
             Tuple of (results_dataframe, query_statistics_dict)
         """
-        query_col = self.dataset_loader.get_query_column()
-        query_id_col = self.dataset_loader.get_query_id_column()
-        relevance_col = self.dataset_loader.get_relevance_column()
-        metadata_cols = self.dataset_loader.get_metadata_columns()
+        query_col = self.dataset.get_query_column()
+        query_id_col = self.dataset.get_query_id_column()
+        relevance_col = self.dataset.get_relevance_column()
+        metadata_cols = self.dataset.get_metadata_columns()
         
         query = str(query_row[query_col])
         query_id = query_row[query_id_col]
@@ -237,7 +237,7 @@ class BenchmarkEvaluator:
 
         # Load dataset if not provided
         if dataset is None:
-            dataset = self.dataset_loader.load(split=split)
+            dataset = self.dataset.load(split=split)
 
         results = []
         query_stats = []
@@ -247,7 +247,7 @@ class BenchmarkEvaluator:
             dataset = dataset.to_pandas()
 
         # Get unique queries along with their metadata
-        query_col = self.dataset_loader.get_query_column()
+        query_col = self.dataset.get_query_column()
         unique_queries = dataset.drop_duplicates(subset=[query_col])
 
         with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:

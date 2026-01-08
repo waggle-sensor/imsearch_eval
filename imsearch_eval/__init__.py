@@ -22,13 +22,13 @@ except ImportError:
 # Always import framework (core dependencies)
 from .framework import (
     BenchmarkEvaluator, VectorDBAdapter, ModelProvider, QueryResult,
-    DatasetLoader, DataLoader, Config, Query
+    BenchmarkDataset, DataLoader, Config, Query
 )
 
 # Build __all__ based on what's available
 __all__ = [
     'BenchmarkEvaluator', 'VectorDBAdapter', 'ModelProvider', 'QueryResult',
-    'DatasetLoader', 'DataLoader', 'Config', 'Query'
+    'BenchmarkDataset', 'DataLoader', 'Config', 'Query'
 ]
 
 if TritonModelProvider is not None:
