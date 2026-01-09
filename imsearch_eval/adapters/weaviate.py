@@ -42,16 +42,6 @@ def _check_weaviate_available():
         )
 
 
-def _check_triton_for_weaviate():
-    """Check if Triton is available (needed for some Weaviate query methods)."""
-    if not _TRITON_AVAILABLE:
-        logging.warning(
-            "Triton adapters are not available. Some Weaviate query methods "
-            "(clip_hybrid_query, colbert_query) will not work. "
-            "Install with: pip install imsearch_eval[weaviate]"
-        )
-
-
 class WeaviateQuery(Query):
     """
     Query class for Weaviate that provides various search methods.
