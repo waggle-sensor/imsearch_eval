@@ -141,37 +141,40 @@ class WeaviateQuery(Query):
     
     def _extract_object_data(self, obj) -> dict:
         """
-        Extract common object data from Weaviate result.
+        Extract object data from Weaviate result.
         
         Args:
             obj: Weaviate object from query result
         
         Returns:
-            Dictionary with extracted properties
+            Dictionary with all properties and metadata extracted.
         """
-        return {
-            "uuid": str(obj.uuid),
-            "filename": obj.properties.get("filename", ""),
-            "caption": obj.properties.get("caption", ""),
-            "score": getattr(obj.metadata, "score", None),
-            "explainScore": getattr(obj.metadata, "explain_score", None),
-            "rerank_score": getattr(obj.metadata, "rerank_score", None),
-            "distance": getattr(obj.metadata, "distance", None),
-            "vsn": obj.properties.get("vsn", ""),
-            "camera": obj.properties.get("camera", ""),
-            "project": obj.properties.get("project", ""),
-            "timestamp": obj.properties.get("timestamp", ""),
-            "link": obj.properties.get("link", ""),
-            "host": obj.properties.get("host", ""),
-            "job": obj.properties.get("job", ""),
-            "plugin": obj.properties.get("plugin", ""),
-            "task": obj.properties.get("task", ""),
-            "zone": obj.properties.get("zone", ""),
-            "node": obj.properties.get("node", ""),
-            "address": obj.properties.get("address", ""),
-            "location_lat": self.get_location_coordinate(obj, "latitude"),
-            "location_lon": self.get_location_coordinate(obj, "longitude"),
-        }
+        result = {}
+        
+        # Always include UUID
+        result["uuid"] = str(obj.uuid)
+        
+        # Extract all properties dynamically
+        if hasattr(obj, 'properties') and obj.properties:
+            for key, value in obj.properties.items():
+                # Skip location as it's handled separately
+                if key != "location":
+                    result[key] = value
+        
+        # Extract metadata fields dynamically
+        if hasattr(obj, 'metadata') and obj.metadata:
+            for key, value in obj.metadata.items():
+                result[key] = value
+        
+        # Handle location coordinates if present
+        if hasattr(obj, 'properties') and obj.properties and "location" in obj.properties:
+            location_lat = self.get_location_coordinate(obj, "latitude")
+            location_lon = self.get_location_coordinate(obj, "longitude")
+            if location_lat != 0.0 or location_lon != 0.0:
+                result["location_lat"] = location_lat
+                result["location_lon"] = location_lon
+        
+        return result
     
     def hybrid_query(
         self,
