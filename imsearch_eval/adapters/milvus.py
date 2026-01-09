@@ -16,10 +16,7 @@ from typing import List, Dict, Any, Optional
 # Check for optional dependencies
 try:
     from pymilvus import (
-        connections,
-        Collection,
         DataType,
-        utility,
         AnnSearchRequest,
         WeightedRanker,
         Function,
@@ -32,7 +29,7 @@ try:
         SPARSE_FLOAT_VECTOR = None
     _MILVUS_AVAILABLE = True
 except ImportError:
-    connections = Collection = DataType = utility = AnnSearchRequest = WeightedRanker = Function = MilvusClient = None
+    DataType = AnnSearchRequest = WeightedRanker = Function = MilvusClient = None
     SPARSE_FLOAT_VECTOR = None
     _MILVUS_AVAILABLE = False
 
@@ -159,38 +156,39 @@ class MilvusQuery(Query):
                 logging.warning(f"Invalid {coordinate_type} value found")
         return 0.0
     
-    def _extract_object_data(self, hit, entity_data: dict) -> dict:
+    def _extract_object_data(self, hit) -> dict:
         """
-        Extract common object data from Milvus result.
+        Extract object data from Milvus result.
         
         Args:
             hit: Hit object from Milvus search result
-            entity_data: Entity data dictionary from the hit
         
         Returns:
-            Dictionary with extracted properties
+            Dictionary with all properties and metadata extracted.
         """
-        return {
-            "uuid": str(entity_data.get("id", hit.id)),
-            "filename": entity_data.get("filename", ""),
-            "caption": entity_data.get("caption", ""),
-            "score": hit.score if hasattr(hit, 'score') else None,
-            "distance": hit.distance if hasattr(hit, 'distance') else None,
-            "vsn": entity_data.get("vsn", ""),
-            "camera": entity_data.get("camera", ""),
-            "project": entity_data.get("project", ""),
-            "timestamp": entity_data.get("timestamp", ""),
-            "link": entity_data.get("link", ""),
-            "host": entity_data.get("host", ""),
-            "job": entity_data.get("job", ""),
-            "plugin": entity_data.get("plugin", ""),
-            "task": entity_data.get("task", ""),
-            "zone": entity_data.get("zone", ""),
-            "node": entity_data.get("node", ""),
-            "address": entity_data.get("address", ""),
-            "location_lat": self.get_location_coordinate(entity_data, "latitude"),
-            "location_lon": self.get_location_coordinate(entity_data, "longitude"),
-        }
+        result = {}
+        entity_data = getattr(hit, "entity", {})
+        
+        # Extract all entity data fields dynamically
+        for key, value in entity_data.items():
+            # Skip location as it's handled separately
+            if key != "location":
+                result[key] = value
+        
+        # Extract metadata from hit object dynamically
+        if hit:
+            for key, value in hit.items():
+                result[key] = value
+        
+        # Handle location coordinates if present
+        if "location" in entity_data:
+            location_lat = self.get_location_coordinate(entity_data, "latitude")
+            location_lon = self.get_location_coordinate(entity_data, "longitude")
+            if location_lat != 0.0 or location_lon != 0.0:
+                result["location_lat"] = location_lat
+                result["location_lon"] = location_lon
+        
+        return result
     
     def vector_query(
         self,
@@ -245,8 +243,7 @@ class MilvusQuery(Query):
         objects = []
         for result in results:
             for hit in result:             
-                entity = getattr(hit, "entity", {})
-                obj_data = self._extract_object_data(hit, entity)
+                obj_data = self._extract_object_data(hit)
                 objects.append(obj_data)
         
         return pd.DataFrame(objects)
@@ -328,9 +325,7 @@ class MilvusQuery(Query):
         rows = []
         for hits in results:
             for hit in hits:
-                # Extract entity fields
-                entity = getattr(hit, "entity", {})
-                rows.append(self._extract_object_data(hit, entity))
+                rows.append(self._extract_object_data(hit))
 
         return pd.DataFrame(rows)
 
@@ -394,7 +389,7 @@ class MilvusAdapter(VectorDBAdapter):
             collection_name: Default collection name to use for queries
             triton_client: Pre-initialized Triton client (optional)
             query_class: Query class to use (defaults to MilvusQuery from adapters)
-            **client_kwargs: Additional parameters to pass to init_client if milvus_connection is None
+            **client_kwargs: Additional parameters to pass to init_client if milvus_client is None
         """
         _check_milvus_available()
         if milvus_client is None:
@@ -417,7 +412,7 @@ class MilvusAdapter(VectorDBAdapter):
         
         if collection_name not in self._query_instances:
             self._query_instances[collection_name] = self.query_class(
-                self.milvus_connection,
+                self.milvus_client,
                 collection_name,
                 self.triton_client
             )
@@ -496,12 +491,12 @@ class MilvusAdapter(VectorDBAdapter):
             collection_name = schema_config["name"]
             
             # Delete existing collection if it exists
-            if utility.has_collection(collection_name, using=self.milvus_connection):
+            if self.milvus_client.has_collection(collection_name):
                 logging.debug(f"Collection '{collection_name}' exists. Deleting it first...")
-                utility.drop_collection(collection_name, using=self.milvus_connection)
+                self.milvus_client.drop_collection(collection_name)
                 
                 # Wait until it's fully deleted
-                while utility.has_collection(collection_name, using=self.milvus_connection):
+                while self.milvus_client.has_collection(collection_name):
                     time.sleep(1)
             
             # Extract schema components
@@ -578,8 +573,8 @@ class MilvusAdapter(VectorDBAdapter):
             True if collection was deleted successfully
         """
         try:
-            if self.milvus_connection.has_collection(collection_name):
-                self.milvus_connection.drop_collection(collection_name)
+            if self.milvus_client.has_collection(collection_name):
+                self.milvus_client.drop_collection(collection_name)
                 logging.debug(f"Collection '{collection_name}' deleted.")
                 return True
             else:
