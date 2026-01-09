@@ -503,7 +503,7 @@ class MilvusAdapter(VectorDBAdapter):
             for field_config in fields_config:
                 try:
                     schema.add_field(**field_config)
-                    logging.debug(f"Added field '{field_config.get("field_name")}' to collection '{collection_name}'")
+                    logging.debug(f"Added field '{field_config.get('field_name')}' to collection '{collection_name}'")
                 except Exception as e:
                     logging.error(f"Failed to add field: {e}")
 
