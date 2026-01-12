@@ -222,13 +222,15 @@ class BenchmarkEvaluator:
 
         return results_df, query_stats
     
-    def evaluate_queries(self, dataset: pd.DataFrame = None, split: str = "test") -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def evaluate_queries(self, dataset: pd.DataFrame = None, split: str = "test", sample_size: int = None, seed: int = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Evaluate unique queries in parallel.
         
         Args:
             dataset: Optional pre-loaded dataset. If None, will load using dataset_loader
             split: Dataset split to use if loading dataset
+            sample_size: Number of samples to load from the dataset (if None, load all samples)
+            seed: Seed for random number generator (if None, use a random seed)
             
         Returns:
             Tuple of (all_results_dataframe, query_statistics_dataframe)
@@ -237,7 +239,7 @@ class BenchmarkEvaluator:
 
         # Load dataset if not provided
         if dataset is None:
-            dataset = self.dataset.load(split=split)
+            dataset = self.dataset.load(split=split, sample_size=sample_size, seed=seed)
 
         results = []
         query_stats = []
