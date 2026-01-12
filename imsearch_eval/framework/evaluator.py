@@ -13,7 +13,7 @@ from .interfaces import VectorDBAdapter, ModelProvider, QueryResult, BenchmarkDa
 QUERY_BATCH_SIZE = int(os.environ.get("QUERY_BATCH_SIZE", 100))
 
 
-def batched(iterable, batch_size):
+def BatchedIterator(iterable, batch_size):
     """
     Yield successive batch_size chunks from iterable.
     Args:
@@ -253,7 +253,7 @@ class BenchmarkEvaluator:
         unique_queries = dataset.drop_duplicates(subset=[query_col])
 
         with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-            for batch in batched(unique_queries.iterrows(), QUERY_BATCH_SIZE):
+            for batch in BatchedIterator(unique_queries.iterrows(), QUERY_BATCH_SIZE):
                 # Process in parallel
                 futures = {
                     executor.submit(self.evaluate_query, query_row, dataset): query_row[query_col]
