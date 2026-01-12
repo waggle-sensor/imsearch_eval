@@ -3,7 +3,7 @@
 import os
 import pandas as pd
 import logging
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Iterable
 from sklearn.metrics import ndcg_score
 from itertools import islice
 from concurrent.futures import ThreadPoolExecutor
@@ -13,14 +13,15 @@ from .interfaces import VectorDBAdapter, ModelProvider, QueryResult, BenchmarkDa
 QUERY_BATCH_SIZE = int(os.environ.get("QUERY_BATCH_SIZE", 100))
 
 
-def BatchedIterator(iterable, batch_size):
+def BatchedIterator(iterable: Iterable, batch_size: int) -> Iterable[List[Any]]:
     """
     Yield successive batch_size chunks from iterable.
     Args:
         iterable: An iterable (e.g., list, DataFrame rows)
         batch_size: Size of each batch
+        
     Yields:
-        list: A batch of items from the iterable
+        Iterable[List[Any]]: A batch of items from the iterable
     """
     it = iter(iterable)
     while batch := list(islice(it, batch_size)):
