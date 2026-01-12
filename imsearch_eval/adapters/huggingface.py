@@ -6,7 +6,7 @@ This module provides all Huggingface-related adapters:
 """
 import pandas as pd
 import random
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 from ..framework.interfaces import BenchmarkDataset
 
 
@@ -34,6 +34,22 @@ class HuggingFaceDataset(BenchmarkDataset):
         Returns:
             DataFrame containing the Hugging Face dataset
         """
+        dataset = self.load_as_dataset(split=split, sample_size=sample_size, seed=seed, **kwargs)
+        return dataset.to_pandas()
+    
+    def load_as_dataset(self, split: str = "test", sample_size: int = None, seed: int = None, **kwargs) -> Dataset:
+        """
+        Load Hugging Face dataset as a Huggingface Dataset.
+        
+        Args:
+            split: Dataset split to load (e.g., "test", "train")
+            sample_size: Number of samples to load from the dataset (if None, load all samples)
+            seed: Seed for random number generator (if None, use a random seed)
+            **kwargs: Additional parameters to pass to datasets.load_dataset
+            
+        Returns:
+            Huggingface Dataset
+        """
         dataset = load_dataset(self.dataset_name, split=split, **kwargs)
         if seed is not None:
             random_generator = random.Random(seed)
@@ -42,4 +58,4 @@ class HuggingFaceDataset(BenchmarkDataset):
         if sample_size is not None:
             sampled_indices = random_generator.sample(range(len(dataset)), sample_size)
             dataset = dataset.select(sampled_indices)
-        return dataset.to_pandas()
+        return dataset
