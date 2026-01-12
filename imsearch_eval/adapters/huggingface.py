@@ -1,5 +1,9 @@
-"""INQUIRE benchmark dataset implementation."""
+"""
+Huggingface-based adapters for benchmarking framework.
 
+This module provides all Huggingface-related adapters:
+- HuggingFaceDataset: Benchmark dataset class for retrieving benchmark datasets from Hugging Face
+"""
 import pandas as pd
 import random
 from datasets import load_dataset
