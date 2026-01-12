@@ -515,7 +515,7 @@ class MilvusAdapter(VectorDBAdapter):
                 for index_config in index_config:
                     try:
                         index_params.add_index(**index_config)
-                        logging.debug(f"Added index for field '{index_config.get("field_name")}' to collection '{collection_name}'")
+                        logging.debug(f"Added index for field '{index_config.get('field_name')}' to collection '{collection_name}'")
                     except Exception as e:
                         logging.error(f"Failed to add index: {e}")
 
@@ -525,7 +525,7 @@ class MilvusAdapter(VectorDBAdapter):
                     try:                                            
                         function = Function(**func_config)
                         schema.add_function(function)
-                        logging.debug(f"Added function '{func_config.get("name")}' to collection '{collection_name}'")
+                        logging.debug(f"Added function '{func_config.get('name')}' to collection '{collection_name}'")
                     except Exception as e:
                         logging.error(f"Failed to add function: {e}")
             
