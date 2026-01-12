@@ -11,7 +11,7 @@ from ..framework.interfaces import BenchmarkDataset
 
 
 class HuggingFaceDataset(BenchmarkDataset):
-    """Benchmark dataset class for retrieving benchmark datasets from Hugging Face."""
+    """Benchmark dataset class for retrieving benchmark datasets from Huggingface."""
     
     def __init__(self, dataset_name: str = None):
         """
