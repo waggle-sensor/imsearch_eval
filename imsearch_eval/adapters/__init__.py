@@ -24,6 +24,12 @@ except ImportError:
     MilvusAdapter = None
     MilvusQuery = None
 
+try:
+    from .huggingface import HuggingFaceDataset
+    _AVAILABLE_ADAPTERS['huggingface'] = ['HuggingFaceDataset']
+except ImportError:
+    HuggingFaceDataset = None
+
 # Build __all__ based on what's available
 __all__ = []
 if TritonModelProvider is not None:
@@ -32,4 +38,5 @@ if WeaviateAdapter is not None:
     __all__.extend(['WeaviateAdapter', 'WeaviateQuery'])
 if MilvusAdapter is not None:
     __all__.extend(['MilvusAdapter', 'MilvusQuery'])
-
+if HuggingFaceDataset is not None:
+    __all__.extend(['HuggingFaceDataset'])

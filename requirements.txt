@@ -8,3 +8,5 @@ Pillow>=9.0.0
 # tritonclient[grpc]>=2.0.0
 # weaviate-client>=4.0.0
 # pymilvus>=2.6.6
+#datasets>=4.4.1
+#huggingface-hub>=0.16.0

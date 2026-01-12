@@ -179,12 +179,14 @@ class BenchmarkDataset(ABC):
     """Abstract interface for benchmark datasets."""
     
     @abstractmethod
-    def load(self, split: str = "test", **kwargs) -> pd.DataFrame:
+    def load(self, split: str = "test", sample_size: int = None, seed: int = None, **kwargs) -> pd.DataFrame:
         """
         Load the dataset.
         
         Args:
             split: Dataset split to load (e.g., "test", "train", "val")
+            sample_size: Number of samples to load from the dataset (if None, load all samples)
+            seed: Seed for random number generator (if None, use a random seed)
             **kwargs: Additional dataset-specific parameters
             
         Returns:

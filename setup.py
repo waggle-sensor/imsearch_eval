@@ -7,7 +7,7 @@ Adapters are available as optional dependencies.
 
 from setuptools import setup, find_packages
 
-VERSION = "0.1.8"
+VERSION = "0.1.9"
 
 # Core dependencies (always required)
 CORE_DEPS = [
@@ -28,11 +28,17 @@ EXTRAS = {
     "milvus": [
         "pymilvus>=2.6.6",
     ],
+    "huggingface": [
+        "datasets>=4.4.1",
+        "huggingface-hub>=0.16.0",
+    ],
     # Convenience extra that includes everything
     "all": [
         "tritonclient[grpc]>=2.0.0",
         "weaviate-client>=4.0.0",
         "pymilvus>=2.6.6",
+        "datasets>=4.4.1",
+        "huggingface-hub>=0.16.0",
     ],
     # For development
     "dev": [

@@ -19,6 +19,19 @@ except ImportError:
     WeaviateAdapter = None
     WeaviateQuery = None
 
+try:
+    from .adapters.milvus import MilvusAdapter, MilvusQuery
+    _AVAILABLE_ADAPTERS['milvus'] = ['MilvusAdapter', 'MilvusQuery']
+except ImportError:
+    MilvusAdapter = None
+    MilvusQuery = None
+
+try:
+    from .adapters.huggingface import HuggingFaceDataset
+    _AVAILABLE_ADAPTERS['huggingface'] = ['HuggingFaceDataset']
+except ImportError:
+    HuggingFaceDataset = None
+
 # Always import framework (core dependencies)
 from .framework import (
     BenchmarkEvaluator, VectorDBAdapter, ModelProvider, QueryResult,
@@ -35,4 +48,7 @@ if TritonModelProvider is not None:
     __all__.extend(['TritonModelProvider', 'TritonModelUtils'])
 if WeaviateAdapter is not None:
     __all__.extend(['WeaviateAdapter', 'WeaviateQuery'])
-
+if MilvusAdapter is not None:
+    __all__.extend(['MilvusAdapter', 'MilvusQuery'])
+if HuggingFaceDataset is not None:
+    __all__.extend(['HuggingFaceDataset'])
