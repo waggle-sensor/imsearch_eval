@@ -187,20 +187,12 @@ class BenchmarkEvaluator:
         relevant_in_dataset = dataset[dataset[query_id_col] == query_id][relevance_col].sum()
 
         # Compute NDCG to evaluate ranking
-        # Try different score columns, fallback to first available
-        ndcg = 0.0
-        secondary_ndcg = 0.0
-        
+        # for each score column, compute NDCG and store in query_stats
+        ndcg_scores = {}
         for col in self.score_columns:
             if col in results_df.columns:
                 ndcg = compute_ndcg(results_df, relevance_col, sortby=col)
-                break
-        
-        # Try to compute secondary NDCG with different score column
-        for col in self.score_columns:
-            if col in results_df.columns and col != (self.score_columns[0] if self.score_columns else None):
-                secondary_ndcg = compute_ndcg(results_df, relevance_col, sortby=col)
-                break
+                ndcg_scores[f"{col}_NDCG"] = ndcg
 
         # Store per-query statistics
         query_stats = {
@@ -214,12 +206,8 @@ class BenchmarkEvaluator:
             "accuracy": correct_retrieval / total_results if total_results else 0.0,
             "precision": relevant_results / total_results if total_results else 0.0,
             "recall": relevant_results / relevant_in_dataset if relevant_in_dataset else 0.0,
-            "NDCG": ndcg,
+            **ndcg_scores,
         }
-        
-        # Add secondary NDCG if computed
-        if secondary_ndcg > 0:
-            query_stats["secondary_NDCG"] = secondary_ndcg
         
         # Add metadata columns
         for col in metadata_cols:
