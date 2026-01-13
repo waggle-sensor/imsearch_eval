@@ -385,14 +385,14 @@ class WeaviateAdapter(VectorDBAdapter):
                 logging.debug("Retrying in 10 seconds...")
                 time.sleep(10)
     
-    def __init__(self, weaviate_client=None, triton_client=None, query_class=None, **client_kwargs):
+    def __init__(self, weaviate_client=None, triton_client=None, query_instance=None, **client_kwargs):
         """
         Initialize Weaviate adapter.
         
         Args:
             weaviate_client: Pre-initialized Weaviate client (optional)
             triton_client: Pre-initialized Triton client (optional)
-            query_class: Query class to use (defaults to WeaviateQuery from adapters)
+            query_instance: Pre-initialized Query instance (optional, defaults to WeaviateQuery from adapters)
             **client_kwargs: Additional parameters to pass to init_client if weaviate_client is None
         """
         _check_weaviate_available()
@@ -402,12 +402,11 @@ class WeaviateAdapter(VectorDBAdapter):
         self.weaviate_client = weaviate_client
         self.triton_client = triton_client
         
-        # Use WeaviateQuery by default, or allow custom query class
-        if query_class is None:
-            query_class = WeaviateQuery
+        # Use WeaviateQuery by default, or allow custom query instance
+        if query_instance is None:
+            query_instance = WeaviateQuery(weaviate_client, triton_client)
         
-        self.query_class = query_class
-        self.query_instance = query_class(weaviate_client, triton_client)
+        self.query_instance = query_instance
     
     def search(
         self, 
