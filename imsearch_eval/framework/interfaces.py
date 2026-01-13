@@ -1,7 +1,7 @@
 """Abstract interfaces for vector database and model providers."""
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 import pandas as pd
 from PIL import Image
 
@@ -333,7 +333,7 @@ class Query(ABC):
         collection_name: str,
         target_vector: str,
         limit: int = 25,
-        query_method: str = "default",
+        query_method: Callable = None,
         **kwargs
     ) -> pd.DataFrame:
         """
@@ -344,7 +344,7 @@ class Query(ABC):
             collection_name: Name of the collection to search
             target_vector: Name of the vector space to search in
             limit: Maximum number of results to return
-            query_method: Method/type of query to perform (implementation-specific, e.g., "hybrid", "vector", "keyword")
+            query_method: Method/type of query to perform (implementation-specific, e.g., "hybrid", "vector", "keyword", custom callable function)
             **kwargs: Additional search parameters passed to the specific query method (implementation-specific)
         
         Returns:
