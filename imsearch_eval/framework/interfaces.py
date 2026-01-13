@@ -242,7 +242,6 @@ class Config(ABC):
     Class variables starting with _ are considered sensitive.
     """
     
-    @abstractmethod
     def get(self, key: str, default: Any = None) -> Any:
         """
         Get a configuration value.
