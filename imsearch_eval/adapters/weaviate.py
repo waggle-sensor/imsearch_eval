@@ -16,6 +16,7 @@ from typing import List, Dict, Any, Callable
 try:
     import weaviate
     from weaviate.classes.query import MetadataQuery, HybridFusion, Rerank
+    from weaviate.client import WeaviateClient
     _WEAVIATE_AVAILABLE = True
 except ImportError:
     weaviate = None
@@ -30,7 +31,7 @@ except ImportError:
     TritonModelUtils = None
     _TRITON_AVAILABLE = False
 
-from ..framework.interfaces import VectorDBAdapter, QueryResult, Query
+from ..framework.interfaces import VectorDBAdapter, QueryResult, Query, ModelUtils
 
 
 def _check_weaviate_available():
@@ -47,7 +48,7 @@ class WeaviateQuery(Query):
     Query class for Weaviate that provides various search methods.
     """
     
-    def __init__(self, weaviate_client, triton_client=None, model_utils=None):
+    def __init__(self, weaviate_client: WeaviateClient, triton_client=None, model_utils: ModelUtils = None):
         """
         Initialize Weaviate query instance.
         
@@ -385,14 +386,14 @@ class WeaviateAdapter(VectorDBAdapter):
                 logging.debug("Retrying in 10 seconds...")
                 time.sleep(10)
     
-    def __init__(self, weaviate_client=None, triton_client=None, query_instance=None, **client_kwargs):
+    def __init__(self, weaviate_client: WeaviateClient = None, triton_client=None, query_instance: Query = None, **client_kwargs):
         """
         Initialize Weaviate adapter.
         
         Args:
             weaviate_client: Pre-initialized Weaviate client (optional)
             triton_client: Pre-initialized Triton client (optional)
-            query_instance: Pre-initialized Query instance (optional, defaults to WeaviateQuery from adapters)
+            query_instance: Pre-initialized Query instance (optional, defaults to WeaviateQuery instance)
             **client_kwargs: Additional parameters to pass to init_client if weaviate_client is None
         """
         _check_weaviate_available()
