@@ -43,7 +43,7 @@ class HuggingFaceDataset(BenchmarkDataset):
         
         Args:
             split: Dataset split to load (e.g., "test", "train")
-            sample_size: Number of samples to load from the dataset (if None, load all samples)
+            sample_size: Number of samples to load from the dataset (if None and <= 0, load all samples)
             seed: Seed for random number generator (if None, use a random seed)
             **kwargs: Additional parameters to pass to datasets.load_dataset
             
@@ -55,7 +55,7 @@ class HuggingFaceDataset(BenchmarkDataset):
             random_generator = random.Random(seed)
         else:
             random_generator = random.Random()
-        if sample_size is not None:
+        if sample_size is not None and sample_size > 0:
             sampled_indices = random_generator.sample(range(len(dataset)), sample_size)
             dataset = dataset.select(sampled_indices)
         return dataset
