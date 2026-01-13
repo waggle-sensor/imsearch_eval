@@ -7,11 +7,7 @@ from typing import Dict, Any, Tuple, List, Iterable, Callable
 from sklearn.metrics import ndcg_score
 from itertools import islice
 from concurrent.futures import ThreadPoolExecutor
-
 from .interfaces import VectorDBAdapter, ModelProvider, QueryResult, BenchmarkDataset
-
-QUERY_BATCH_SIZE = int(os.environ.get("QUERY_BATCH_SIZE", 100))
-
 
 def BatchedIterator(iterable: Iterable, batch_size: int) -> Iterable[List[Any]]:
     """
@@ -215,11 +211,12 @@ class BenchmarkEvaluator:
 
         return results_df, query_stats
     
-    def evaluate_queries(self, dataset: pd.DataFrame = None, split: str = "test", sample_size: int = None, seed: int = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def evaluate_queries(self, query_batch_size: int = 100, dataset: pd.DataFrame = None, split: str = "test", sample_size: int = None, seed: int = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Evaluate unique queries in parallel.
         
         Args:
+            query_batch_size: Number of queries to submit in one batch
             dataset: Optional pre-loaded dataset. If None, will load using dataset_loader
             split: Dataset split to use if loading dataset
             sample_size: Number of samples to load from the dataset (if None, load all samples)
@@ -246,7 +243,7 @@ class BenchmarkEvaluator:
         unique_queries = dataset.drop_duplicates(subset=[query_col])
 
         with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-            for batch in BatchedIterator(unique_queries.iterrows(), QUERY_BATCH_SIZE):
+            for batch in BatchedIterator(unique_queries.iterrows(), query_batch_size):
                 # Process in parallel
                 futures = {
                     executor.submit(self.evaluate_query, query_row, dataset): query_row[query_col]
