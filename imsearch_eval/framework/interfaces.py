@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Callable
 import pandas as pd
 from PIL import Image
+import csv
 
 
 class QueryResult:
@@ -236,7 +237,10 @@ class BenchmarkDataset(ABC):
         return []
 
 class Config(ABC):
-    """Abstract interface for configuration/hyperparameters."""
+    """
+    Abstract interface for configuration/hyperparameters. 
+    Class variables starting with _ are considered sensitive.
+    """
     
     @abstractmethod
     def get(self, key: str, default: Any = None) -> Any:
@@ -250,7 +254,7 @@ class Config(ABC):
         Returns:
             Configuration value
         """
-        pass
+        return getattr(self, key, default)
     
     def get_all(self) -> Dict[str, Any]:
         """
@@ -259,7 +263,33 @@ class Config(ABC):
         Returns:
             Dictionary of all configuration values
         """
-        return {}
+        return {
+            k: v for k, v in self.__dict__.items()
+            if not k.startswith('_')
+        }
+
+    def to_csv(self) -> str:
+        """
+        Convert the configuration to CSV file content. Skip private variables and variables starting with _.
+        
+        Returns:
+            CSV file content with config variable, value, and type
+        """ 
+        config_data = []
+        
+        # Get all config variables (excluding private ones starting with _)
+        for attr_name in dir(self):
+            if not attr_name.startswith('_') and not callable(getattr(self, attr_name, None)) and not attr_name.startswith('os'):
+                attr_value = getattr(self, attr_name)
+                config_data.append({
+                    'Config Variable': attr_name,
+                    'Value': str(attr_value),
+                    'Type': type(attr_value).__name__
+                })
+        
+        config_df = pd.DataFrame(config_data)
+        config_df = config_df.sort_values('Config Variable')
+        return config_df.to_csv(index=False)
 
 class DataLoader(ABC):
     """
