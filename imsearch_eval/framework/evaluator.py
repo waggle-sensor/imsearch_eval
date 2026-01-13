@@ -153,7 +153,6 @@ class BenchmarkEvaluator:
                 "accuracy": 0.0,
                 "precision": 0.0,
                 "recall": 0.0,
-                "NDCG": 0.0,
             }
             
             # Add metadata columns
