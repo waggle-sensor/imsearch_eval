@@ -10,7 +10,7 @@ import os
 import logging
 import time
 import pandas as pd
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable
 
 # Check for optional dependencies
 try:
@@ -77,7 +77,7 @@ class WeaviateQuery(Query):
         collection_name: str,
         target_vector: str,
         limit: int = 25,
-        query_method: str = "clip_hybrid_query",
+        query_method: Callable = None,
         **kwargs
     ) -> pd.DataFrame:
         """
@@ -91,23 +91,16 @@ class WeaviateQuery(Query):
             collection_name: Name of the collection to search
             target_vector: Name of the vector space to search in
             limit: Maximum number of results to return
-            query_method: Method name to call (e.g., "clip_hybrid_query", "hybrid_query", "colbert_query")
+            query_method: Method name to call (e.g., "clip_hybrid_query", "hybrid_query", "colbert_query", custom callable function)
             **kwargs: Additional search parameters passed to the specific query method
         
         Returns:
             DataFrame with search results
         """
         # Route to the appropriate query method
-        if query_method == "clip_hybrid_query":
-            return self.clip_hybrid_query(near_text, collection_name, target_vector, limit, **kwargs)
-        elif query_method == "hybrid_query":
-            return self.hybrid_query(near_text, collection_name, target_vector, limit, **kwargs)
-        elif query_method == "colbert_query":
-            return self.colbert_query(near_text, collection_name, target_vector, limit, **kwargs)
-        else:
-            # Default to clip_hybrid_query if method not recognized
-            logging.warning(f"Unknown query method '{query_method}', defaulting to 'clip_hybrid_query'")
-            return self.clip_hybrid_query(near_text, collection_name, target_vector, limit, **kwargs)
+        if query_method is None:
+            query_method = self.clip_hybrid_query
+        return query_method(near_text, collection_name, target_vector, limit, **kwargs)
     
     def get_location_coordinate(self, obj, coordinate_type: str) -> float:
         """
@@ -173,9 +166,10 @@ class WeaviateQuery(Query):
         target_vector: str,
         limit: int = 25,
         alpha: float = 0.4,
-        query_properties: list = ["caption", "camera", "host", "job", "vsn", "plugin", "zone", "project", "address"],
+        query_properties: list = [],
         autocut_jumps: int = 0,
-        rerank_prop: str = "caption"
+        rerank_prop: str = "caption",
+        **kwargs
     ) -> pd.DataFrame:
         """
         Perform a hybrid vector and keyword search.
@@ -189,7 +183,7 @@ class WeaviateQuery(Query):
             query_properties: List of properties to search in keyword search
             autocut_jumps: Number of jumps for autocut (0 to disable)
             rerank_prop: Property to rerank by against the query (default: "caption")
-        
+            **kwargs: Additional parameters to pass to the weaviate's collection.query.hybrid method
         Returns:
             DataFrame with search results
         """
@@ -208,7 +202,8 @@ class WeaviateQuery(Query):
             rerank=Rerank(
                 prop=rerank_prop,
                 query=near_text
-            )
+            ),
+            **kwargs
         )
         
         # Extract results
@@ -226,7 +221,8 @@ class WeaviateQuery(Query):
         target_vector: str,
         limit: int = 25,
         autocut_jumps: int = 0,
-        rerank_prop: str = "caption"
+        rerank_prop: str = "caption",
+        **kwargs
     ) -> pd.DataFrame:
         """
         Perform a vector search using ColBERT embeddings.
@@ -238,6 +234,7 @@ class WeaviateQuery(Query):
             limit: Maximum number of results to return
             autocut_jumps: Number of jumps for autocut (0 to disable)
             rerank_prop: Property to rerank by against the query (default: "caption")
+            **kwargs: Additional parameters to pass to the weaviate's collection.query.near_vector method
         Returns:
             DataFrame with search results
         """
@@ -269,7 +266,8 @@ class WeaviateQuery(Query):
             rerank=Rerank(
                 prop=rerank_prop,
                 query=near_text
-            )
+            ),
+            **kwargs
         )
         
         # Extract results
@@ -288,9 +286,10 @@ class WeaviateQuery(Query):
         limit: int = 25,
         alpha: float = 0.4,
         clip_alpha: float = 0.7,
-        query_properties: list = ["caption", "camera", "host", "job", "vsn", "plugin", "zone", "project", "address"],
+        query_properties: list = [],
         autocut_jumps: int = 0,
-        rerank_prop: str = "caption"
+        rerank_prop: str = "caption",
+        **kwargs
     ) -> pd.DataFrame:
         """
         Perform a hybrid search using CLIP embeddings.
@@ -305,7 +304,7 @@ class WeaviateQuery(Query):
             query_properties: List of properties to search in keyword search
             autocut_jumps: Number of jumps for autocut (0 to disable)
             rerank_prop: Property to rerank by against the query (default: "caption")
-        
+            **kwargs: Additional parameters to pass to the weaviate's collection.query.hybrid method
         Returns:
             DataFrame with search results
         """
@@ -334,7 +333,8 @@ class WeaviateQuery(Query):
             rerank=Rerank(
                 prop=rerank_prop,
                 query=near_text
-            )
+            ),
+            **kwargs
         )
         
         # Extract results
@@ -427,7 +427,7 @@ class WeaviateAdapter(VectorDBAdapter):
             target_vector: Name of the vector space to search in
             limit: Maximum number of results to return
             query_method: Method name to use (e.g., "clip_hybrid_query", "hybrid_query", "colbert_query")
-            **kwargs: Additional search parameters
+            **kwargs: Additional search parameters passed to the specific query method
             
         Returns:
             QueryResult containing search results
@@ -463,8 +463,6 @@ class WeaviateAdapter(VectorDBAdapter):
             True if collection was created successfully
         """
         try:
-            from weaviate.classes.config import Configure, Property
-
             if "name" not in schema_config:
                 raise ValueError("Collection name is required in schema_config")
             collection_name = schema_config["name"]
