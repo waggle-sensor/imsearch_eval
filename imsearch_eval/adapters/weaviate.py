@@ -147,8 +147,18 @@ class WeaviateQuery(Query):
         
         # Extract metadata fields dynamically
         if hasattr(obj, 'metadata') and obj.metadata:
-            for key, value in obj.metadata.items():
-                result[key] = value
+            # MetadataReturn object doesn't have items(), so we use dir() to get all attributes
+            # and filter out private/internal attributes
+            for attr_name in dir(obj.metadata):
+                # Skip private attributes and methods
+                if not attr_name.startswith('_') and not callable(getattr(obj.metadata, attr_name, None)):
+                    try:
+                        value = getattr(obj.metadata, attr_name)
+                        if value is not None:
+                            result[attr_name] = value
+                    except (AttributeError, TypeError):
+                        # Skip attributes that can't be accessed
+                        continue
         
         # Handle location coordinates if present
         if hasattr(obj, 'properties') and obj.properties and "location" in obj.properties:
