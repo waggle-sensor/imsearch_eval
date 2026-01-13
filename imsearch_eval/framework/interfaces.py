@@ -47,7 +47,7 @@ class VectorDBAdapter(ABC):
         collection_name: str,
         target_vector: str,
         limit: int = 25,
-        query_method: str = "default",
+        query_method: Callable = None,
         **kwargs
     ) -> QueryResult:
         """
@@ -58,7 +58,7 @@ class VectorDBAdapter(ABC):
             collection_name: Name of the collection/index to search
             target_vector: Name of the vector space to search in
             limit: Maximum number of results to return
-            query_method: Method/type of query to perform (implementation-specific, e.g., "hybrid", "vector", "keyword")
+            query_method: Method/type of query to perform (implementation-specific, e.g., "hybrid", "vector", "keyword", custom callable function)
             **kwargs: Additional search parameters passed to the specific query method (implementation-specific)
             
         Returns:

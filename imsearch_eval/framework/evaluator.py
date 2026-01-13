@@ -3,7 +3,7 @@
 import os
 import pandas as pd
 import logging
-from typing import Dict, Any, Tuple, List, Iterable
+from typing import Dict, Any, Tuple, List, Iterable, Callable
 from sklearn.metrics import ndcg_score
 from itertools import islice
 from concurrent.futures import ThreadPoolExecutor
@@ -66,7 +66,7 @@ class BenchmarkEvaluator:
         model_provider: ModelProvider,
         dataset: BenchmarkDataset,
         collection_name: str = "default",
-        query_method: str = "search",
+        query_method: Callable = None,
         limit: int = 25,
         score_columns: List[str] = None,
         target_vector: str = "default",
@@ -80,7 +80,7 @@ class BenchmarkEvaluator:
             model_provider: Model provider instance
             dataset: Benchmark dataset instance
             collection_name: Name of the collection to search
-            query_method: Method name to use for querying
+            query_method: Method/type of query to perform (implementation-specific, e.g., "hybrid", "vector", "keyword", custom callable function)
             limit: Maximum number of results to return per query
             score_columns: List of column names to try for NDCG computation (in order of preference)
             target_vector: Name of the vector space to search in

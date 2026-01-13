@@ -415,7 +415,7 @@ class WeaviateAdapter(VectorDBAdapter):
         collection_name: str,
         target_vector: str,
         limit: int = 25,
-        query_method: str = "clip_hybrid_query",
+        query_method: Callable = None,
         **kwargs
     ) -> QueryResult:
         """
@@ -426,7 +426,7 @@ class WeaviateAdapter(VectorDBAdapter):
             collection_name: Name of the collection to search
             target_vector: Name of the vector space to search in
             limit: Maximum number of results to return
-            query_method: Method name to use (e.g., "clip_hybrid_query", "hybrid_query", "colbert_query")
+            query_method: Method/type of query to perform (e.g., "clip_hybrid_query", "hybrid_query", "colbert_query", custom callable function)
             **kwargs: Additional search parameters passed to the specific query method
             
         Returns:
