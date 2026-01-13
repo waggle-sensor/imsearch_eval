@@ -24,6 +24,11 @@ pip install imsearch_eval[triton]
 pip install imsearch_eval[weaviate]
 ```
 
+**Milvus adapters** (includes Triton, as MilvusAdapter uses TritonModelUtils):
+```bash
+pip install imsearch_eval[milvus]
+```
+
 **All adapters**:
 ```bash
 pip install imsearch_eval[all]
@@ -43,10 +48,13 @@ pip install -e .  # Core only
 # Or with extras:
 pip install -e ".[triton]"
 pip install -e ".[weaviate]"
+pip install -e ".[milvus]"
 pip install -e ".[all]"
 ```
 
 ## Quick Start
+
+### Using Weaviate
 
 ```python
 from imsearch_eval import BenchmarkEvaluator
@@ -93,7 +101,8 @@ imsearch_eval/
 └── adapters/                     # Shared concrete implementations
     ├── __init__.py             # Exports all adapters
     ├── triton.py               # TritonModelProvider, TritonModelUtils
-    └── weaviate.py             # WeaviateAdapter, WeaviateQuery
+    ├── weaviate.py             # WeaviateAdapter, WeaviateQuery
+    └── milvus.py               # MilvusAdapter, MilvusQuery
 ```
 
 ## Framework Components
@@ -132,6 +141,18 @@ imsearch_eval/
   - Uses `WeaviateQuery` internally for search operations
 
 **Dependencies**: `weaviate-client`, `tritonclient[grpc]` (for embedding generation)
+
+#### Milvus Adapters (`imsearch_eval.adapters.milvus`)
+
+- **`MilvusQuery`**: Implements `Query` interface for Milvus
+  - Generic `query()` method routes to specific methods based on `query_method` parameter
+  - Supports hybrid search combining dense and sparse vectors (BM25)
+  - Provides methods: `clip_hybrid_query()`, `vector_query()`
+- **`MilvusAdapter`**: Implements `VectorDBAdapter` interface for Milvus
+  - Uses `MilvusQuery` internally for search operations
+  - Supports multi-vector search with native hybrid search capabilities
+
+**Dependencies**: `pymilvus>=2.6.6`, `tritonclient[grpc]` (for embedding generation)
 
 ### Evaluator (`imsearch_eval.framework.evaluator`)
 
@@ -175,16 +196,29 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
    ```python
    import tritonclient.grpc as TritonClient
    
+   # For Weaviate
    weaviate_client = WeaviateAdapter.init_client(host="127.0.0.1", port="8080")
+   
+   # For Milvus
+   milvus_client = MilvusAdapter.init_client(uri="http://localhost:19530")
+   
    triton_client = TritonClient.InferenceServerClient(url="triton:8001")
    ```
 
 3. **Create adapters**:
    ```python
+   # For Weaviate
    vector_db = WeaviateAdapter(
        weaviate_client=weaviate_client,
        triton_client=triton_client
    )
+   
+   # For Milvus
+   vector_db = MilvusAdapter(
+       milvus_client=milvus_client,
+       triton_client=triton_client
+   )
+   
    model_provider = TritonModelProvider(triton_client=triton_client)
    ```
 
@@ -222,7 +256,7 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
        model_provider=model_provider,
        dataset=dataset,
        collection_name="my_collection",
-       query_method="clip_hybrid_query"  # Query type for WeaviateQuery
+       query_method="clip_hybrid_query"  # Query type (e.g., "clip_hybrid_query" for Weaviate/Milvus)
    )
    
    results, stats = evaluator.evaluate_queries(split="test")
@@ -232,9 +266,11 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
 
 The `query_method` parameter in `BenchmarkEvaluator` is passed to the `Query.query()` method:
 
-- **For Weaviate**: `query_method` can be `"clip_hybrid_query"`, `"hybrid_query"`, or `"colbert_query"`
+- **For Weaviate**: `query_method` can be `"clip_hybrid_query"`, `"hybrid_query"`, or `"colbert_query"`, or a custom callable function
+- **For Milvus**: `query_method` can be `"clip_hybrid_query"`, `"vector_query"`, or a custom callable function
 - **For other vector DBs**: Implement your own query types in your `Query` implementation
 - The `Query.query()` method routes to the appropriate implementation based on `query_method`
+- `query_method` can also be a callable function for custom query logic
 
 ### Model Names
 

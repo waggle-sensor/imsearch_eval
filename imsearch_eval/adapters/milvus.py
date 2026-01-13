@@ -11,7 +11,7 @@ import logging
 import time
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 
 # Check for optional dependencies
 try:
@@ -42,6 +42,7 @@ except ImportError:
     _TRITON_AVAILABLE = False
 
 from ..framework.interfaces import VectorDBAdapter, QueryResult, Query
+from ..framework.model_utils import ModelUtils
 
 
 def _check_milvus_available():
@@ -57,7 +58,7 @@ class MilvusQuery(Query):
     Query class for Milvus that provides various search methods.
     """
     
-    def __init__(self, milvus_client, collection_name: str, triton_client=None, model_utils=None):
+    def __init__(self, milvus_client, collection_name: str, triton_client=None, model_utils: ModelUtils = None):
         """
         Initialize Milvus query instance.
         
@@ -90,7 +91,7 @@ class MilvusQuery(Query):
         collection_name: str,
         target_vector: str,
         limit: int = 25,
-        query_method: str = "clip_hybrid_query",
+        query_method: Callable = None,
         **kwargs
     ) -> pd.DataFrame:
         """
@@ -104,21 +105,18 @@ class MilvusQuery(Query):
             collection_name: Name of the collection to search (ignored, uses instance collection_name)
             target_vector: Name of the vector field to search in
             limit: Maximum number of results to return
-            query_method: Method name to call (e.g., "clip_hybrid_query", "vector_query")
+            query_method: Method/type of query to perform (e.g., "clip_hybrid_query", "vector_query", custom callable function)
             **kwargs: Additional search parameters passed to the specific query method
         
         Returns:
             DataFrame with search results
         """
-        # Route to the appropriate query method
-        if query_method == "clip_hybrid_query":
-            return self.clip_hybrid_query(near_text, collection_name, target_vector, limit, **kwargs)
-        elif query_method == "vector_query":
-            return self.vector_query(near_text, collection_name, target_vector, limit, **kwargs)
-        else:
-            # Default to clip_hybrid_query if method not recognized
-            logging.warning(f"Unknown query method '{query_method}', defaulting to 'clip_hybrid_query'")
-            return self.clip_hybrid_query(near_text, collection_name, target_vector, limit, **kwargs)
+        # Route to the appropriate query method if not provided
+        if query_method is None:
+            query_method = self.clip_hybrid_query
+        
+        # Call the query method
+        return query_method(near_text, collection_name, target_vector, limit, **kwargs)
     
     def get_location_coordinate(self, obj, coordinate_type: str) -> float:
         """
@@ -414,7 +412,7 @@ class MilvusAdapter(VectorDBAdapter):
         collection_name: str,
         target_vector: str,
         limit: int = 25,
-        query_method: str = "clip_hybrid_query",
+        query_method: Callable = None,
         **kwargs
     ) -> QueryResult:
         """
@@ -425,8 +423,8 @@ class MilvusAdapter(VectorDBAdapter):
             collection_name: Name of the collection to search
             target_vector: Name of the vector field to search in
             limit: Maximum number of results to return
-            query_method: Method name to use (e.g., "clip_hybrid_query", "vector_query")
-            **kwargs: Additional search parameters
+            query_method: Method/type of query to perform (e.g., "clip_hybrid_query", "vector_query", custom callable function)
+            **kwargs: Additional search parameters passed to the specific query method
             
         Returns:
             QueryResult containing search results
