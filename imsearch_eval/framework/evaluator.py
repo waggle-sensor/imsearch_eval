@@ -69,7 +69,8 @@ class BenchmarkEvaluator:
         query_method: str = "search",
         limit: int = 25,
         score_columns: List[str] = None,
-        target_vector: str = "default"
+        target_vector: str = "default",
+        query_parameters: Dict[str, Any] = {}
     ):
         """
         Initialize the benchmark evaluator.
@@ -79,10 +80,11 @@ class BenchmarkEvaluator:
             model_provider: Model provider instance
             dataset: Benchmark dataset instance
             collection_name: Name of the collection to search
-            query_method: Method name to use for querying (for logging/debugging)
+            query_method: Method name to use for querying
             limit: Maximum number of results to return per query
             score_columns: List of column names to try for NDCG computation (in order of preference)
             target_vector: Name of the vector space to search in
+            query_parameters: Additional parameters for querying passed to the specific query method (e.g. query_parameters={"limit": 25, "target_vector": "clip"})
         """
         self.vector_db = vector_db
         self.model_provider = model_provider
@@ -92,6 +94,7 @@ class BenchmarkEvaluator:
         self.limit = limit
         self.score_columns = score_columns or ["rerank_score", "clip_score", "score", "distance"]
         self.target_vector = target_vector
+        self.query_parameters = query_parameters
     
     def evaluate_query(
         self, 
@@ -126,7 +129,8 @@ class BenchmarkEvaluator:
                 collection_name=self.collection_name,
                 target_vector=self.target_vector,
                 limit=self.limit,
-                query_method=self.query_method
+                query_method=self.query_method,
+                **self.query_parameters
             )
             results_df = query_result.to_dataframe()
         except Exception as e:
