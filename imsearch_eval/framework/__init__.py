@@ -4,7 +4,8 @@ from .interfaces import (
     VectorDBAdapter, ModelProvider, QueryResult, BenchmarkDataset, 
     DataLoader, Config, Query
 )
-from .evaluator import BenchmarkEvaluator, BatchedIterator
+from .evaluator import BenchmarkEvaluator
+from .helpers import BatchedIterator
 from .model_utils import ModelUtils, fuse_embeddings
 
 __all__ = [
