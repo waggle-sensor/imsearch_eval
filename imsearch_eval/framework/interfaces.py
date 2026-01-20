@@ -1,10 +1,13 @@
 """Abstract interfaces for vector database and model providers."""
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Iterable
 import pandas as pd
 from PIL import Image
-import csv
+from concurrent.futures import ThreadPoolExecutor
+import os
+import logging
+from .helpers import BatchedIterator
 
 
 class QueryResult:
@@ -295,16 +298,18 @@ class DataLoader(ABC):
     Abstract interface for loading data into vector databases.
     """
     
-    def __init__(self, config: Config, model_provider: ModelProvider):
+    def __init__(self, config: Config, model_provider: ModelProvider, dataset: BenchmarkDataset):
         """
         Initialize the DataLoader with a configuration.
         
         Args:
             config: Configuration object implementing the Config interface
             model_provider: Model provider for generating embeddings/captions
+            dataset: Benchmark dataset instance
         """
         self.config = config
         self.model_provider = model_provider
+        self.dataset = dataset
     
     @abstractmethod
     def process_item(
@@ -330,27 +335,45 @@ class DataLoader(ABC):
             Dictionary containing schema configuration
         """
         pass
-    
-    def process_batch(
-        self,
-        batch: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+
+    def process_batch(self, batch_size: List[Dict[str, Any]], dataset: Iterable = None, split: str = "test", sample_size: int = None, seed: int = None, workers: int = 0) -> List[Dict[str, Any]]:
         """
-        Process a batch of items. Default implementation processes items sequentially.
-        Override for parallel processing.
-        
+        Process a batch of items in parallel.
+
         Args:
-            batch: List of dataset items
+            batch_size: Number of items to process in each batch
+            dataset: Optional pre-loaded dataset. If None, will load using dataset.load()
+            split: Dataset split to use if loading dataset
+            sample_size: Number of samples to load from the dataset (if None, load all samples)
+            seed: Seed for random number generator (if None, use a random seed)
+            workers: Number of workers to use for parallel processing (if 0, use all available CPUs)
         Returns:
             List of processed items ready for insertion
-        """
-        processed_items = []
-        for item in batch:
-            processed_item = self.process_item(item)
-            if processed_item is not None:
-                processed_items.append(processed_item)
-        return processed_items
+        """ 
+        logging.debug("Starting Data Loader...")
 
+        # Load dataset if not provided
+        if dataset is None:
+            dataset = self.dataset.load(split=split, sample_size=sample_size, seed=seed)
+
+        # get number of workers
+        num_workers = workers if workers > 0 else os.cpu_count()
+        
+        # Process in parallel
+        results = []
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            for batch in BatchedIterator(dataset, batch_size):
+                futures = {
+                    executor.submit(self.process_item, item): item
+                    for item in batch
+                }
+
+                for future in futures:
+                    processed_item = future.result()
+                    results.append(processed_item)
+        
+        # return results
+        return results
 
 class Query(ABC):
     """Abstract interface for query classes used by vector database adapters."""
