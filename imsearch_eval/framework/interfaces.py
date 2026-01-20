@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 import logging
 from .helpers import BatchedIterator
-
+from tqdm import tqdm
 
 class QueryResult:
     """Container for query results from a vector database."""
@@ -336,7 +336,7 @@ class DataLoader(ABC):
         """
         pass
 
-    def process_batch(self, batch_size: List[Dict[str, Any]], dataset: Iterable = None, split: str = "test", sample_size: int = None, seed: int = None, workers: int = 0) -> List[Dict[str, Any]]:
+    def process_batch(self, batch_size: int, dataset: Iterable = None, split: str = "test", sample_size: int = None, seed: int = None, workers: int = 0) -> List[Dict[str, Any]]:
         """
         Process a batch of items in parallel.
 
@@ -356,21 +356,36 @@ class DataLoader(ABC):
         if dataset is None:
             dataset = self.dataset.load(split=split, sample_size=sample_size, seed=seed)
 
+        # Get total count for progress bar if available
+        total_items = len(dataset)
+
         # get number of workers
         num_workers = workers if workers > 0 else os.cpu_count()
         
-        # Process in parallel
+        # Process in parallel with progress bar
         results = []
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            for batch in BatchedIterator(dataset, batch_size):
-                futures = {
-                    executor.submit(self.process_item, item): item
-                    for item in batch
-                }
+            # Create progress bar
+            pbar = tqdm(
+                total=total_items,
+                desc="Processing items",
+                unit="item",
+            )
+            
+            try:
+                for batch in BatchedIterator(dataset, batch_size):
+                    futures = {
+                        executor.submit(self.process_item, item): item
+                        for item in batch
+                    }
 
-                for future in futures:
-                    processed_item = future.result()
-                    results.append(processed_item)
+                    for future in futures:
+                        processed_item = future.result()
+                        if processed_item is not None:
+                            results.append(processed_item)
+                        pbar.update(1)
+            finally:
+                pbar.close()
         
         # return results
         return results

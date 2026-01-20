@@ -15,6 +15,7 @@ CORE_DEPS = [
     "numpy>=1.21.0",
     "scikit-learn>=1.0.0",
     "Pillow>=9.0.0",
+    "tqdm>=4.64.0",
 ]
 
 # Optional adapter dependencies

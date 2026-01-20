@@ -8,6 +8,7 @@ from sklearn.metrics import ndcg_score
 from concurrent.futures import ThreadPoolExecutor
 from .interfaces import VectorDBAdapter, ModelProvider, QueryResult, BenchmarkDataset
 from .helpers import BatchedIterator
+from tqdm import tqdm
 
 def compute_ndcg(df: pd.DataFrame, relevance_col: str, sortby: str = "rerank_score") -> float:
     """
@@ -228,19 +229,31 @@ class BenchmarkEvaluator:
         # Get unique queries along with their metadata
         query_col = self.dataset.get_query_column()
         unique_queries = dataset.drop_duplicates(subset=[query_col])
+        total_queries = len(unique_queries)
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            for batch in BatchedIterator(unique_queries.iterrows(), query_batch_size):
-                # Process in parallel
-                futures = {
-                    executor.submit(self.evaluate_query, query_row, dataset): query_row[query_col]
-                    for _, query_row in batch
-                }
+            # Create progress bar
+            pbar = tqdm(
+                total=total_queries,
+                desc="Evaluating queries",
+                unit="query",
+            )
+            
+            try:
+                for batch in BatchedIterator(unique_queries.iterrows(), query_batch_size):
+                    # Process in parallel
+                    futures = {
+                        executor.submit(self.evaluate_query, query_row, dataset): query_row[query_col]
+                        for _, query_row in batch
+                    }
 
-                for future in futures:
-                    df, stats = future.result()
-                    results.append(df)
-                    query_stats.append(stats)
+                    for future in futures:
+                        df, stats = future.result()
+                        results.append(df)
+                        query_stats.append(stats)
+                        pbar.update(1)
+            finally:
+                pbar.close()
 
         # Combine all results into a DataFrame
         all_results_df = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
