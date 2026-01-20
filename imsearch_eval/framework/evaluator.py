@@ -3,26 +3,11 @@
 import os
 import pandas as pd
 import logging
-from typing import Dict, Any, Tuple, List, Iterable, Callable
+from typing import Dict, Any, Tuple, List, Callable
 from sklearn.metrics import ndcg_score
-from itertools import islice
 from concurrent.futures import ThreadPoolExecutor
 from .interfaces import VectorDBAdapter, ModelProvider, QueryResult, BenchmarkDataset
-
-def BatchedIterator(iterable: Iterable, batch_size: int) -> Iterable[List[Any]]:
-    """
-    Yield successive batch_size chunks from iterable.
-    Args:
-        iterable: An iterable (e.g., list, DataFrame rows)
-        batch_size: Size of each batch
-        
-    Yields:
-        Iterable[List[Any]]: A batch of items from the iterable
-    """
-    it = iter(iterable)
-    while batch := list(islice(it, batch_size)):
-        yield batch
-
+from .helpers import BatchedIterator
 
 def compute_ndcg(df: pd.DataFrame, relevance_col: str, sortby: str = "rerank_score") -> float:
     """
@@ -210,17 +195,17 @@ class BenchmarkEvaluator:
 
         return results_df, query_stats
     
-    def evaluate_queries(self, query_batch_size: int = 100, dataset: pd.DataFrame = None, split: str = "test", sample_size: int = None, seed: int = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def evaluate_queries(self, query_batch_size: int = 100, dataset: pd.DataFrame = None, split: str = "test", sample_size: int = None, seed: int = None, workers: int = 0) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Evaluate unique queries in parallel.
         
         Args:
             query_batch_size: Number of queries to submit in one batch
-            dataset: Optional pre-loaded dataset. If None, will load using dataset_loader
+            dataset: Optional pre-loaded dataset. If None, will load using dataset.load()
             split: Dataset split to use if loading dataset
             sample_size: Number of samples to load from the dataset (if None, load all samples)
             seed: Seed for random number generator (if None, use a random seed)
-            
+            workers: Number of workers to use for parallel processing (if 0, use all available CPUs)
         Returns:
             Tuple of (all_results_dataframe, query_statistics_dataframe)
         """
@@ -229,6 +214,9 @@ class BenchmarkEvaluator:
         # Load dataset if not provided
         if dataset is None:
             dataset = self.dataset.load(split=split, sample_size=sample_size, seed=seed)
+
+        # get number of workers
+        num_workers = workers if workers > 0 else os.cpu_count()
 
         results = []
         query_stats = []
@@ -241,7 +229,7 @@ class BenchmarkEvaluator:
         query_col = self.dataset.get_query_column()
         unique_queries = dataset.drop_duplicates(subset=[query_col])
 
-        with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
             for batch in BatchedIterator(unique_queries.iterrows(), query_batch_size):
                 # Process in parallel
                 futures = {
