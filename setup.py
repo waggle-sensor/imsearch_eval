@@ -7,7 +7,7 @@ Adapters are available as optional dependencies.
 
 from setuptools import setup, find_packages
 
-VERSION = "0.1.28"
+VERSION = "0.1.29"
 
 # Core dependencies (always required)
 CORE_DEPS = [
