@@ -25,7 +25,7 @@ except ImportError:
 
 # Try to import TritonModelUtils (optional, but needed for some query methods)
 try:
-    from .triton import TritonModelUtils
+    from ..triton import TritonModelUtils
     _TRITON_AVAILABLE = True
 except ImportError:
     TritonModelUtils = None

@@ -4,55 +4,44 @@ Setup configuration for imsearch_eval package.
 This package provides an abstract framework for benchmarking vector databases and models.
 Adapters are available as optional dependencies.
 """
-
 from setuptools import setup, find_packages
+from pathlib import Path
 
-VERSION = "0.1.29"
+VERSION = "0.1.30"
 
-# Core dependencies (always required)
-CORE_DEPS = [
-    "pandas>=1.5.0",
-    "numpy>=1.21.0",
-    "scikit-learn>=1.0.0",
-    "Pillow>=9.0.0",
-    "tqdm>=4.64.0",
-]
+def parse_requirements(requirements_path: Path) -> list[str]:
+    """Helper function to parse requirements file, filtering out empty lines and comments."""
+    if not requirements_path.exists():
+        return []
+    lines = requirements_path.read_text(encoding="utf-8").splitlines()
+    return [line.strip() for line in lines if line.strip() and not line.strip().startswith("#")]
 
-# Optional adapter dependencies
+# Get requirements from files
+core_requirements_path = Path(__file__).parent / "imsearch_eval/requirements.txt"
+triton_requirements_path = Path(__file__).parent / "imsearch_eval/adapters/triton/requirements.txt"
+weaviate_requirements_path = Path(__file__).parent / "imsearch_eval/adapters/weaviate/requirements.txt"
+milvus_requirements_path = Path(__file__).parent / "imsearch_eval/adapters/milvus/requirements.txt"
+huggingface_requirements_path = Path(__file__).parent / "imsearch_eval/adapters/huggingface/requirements.txt"
+
+# Core dependencies
+CORE_DEPS = parse_requirements(core_requirements_path)
+
+# Optional dependencies for different adapters
+triton_deps = parse_requirements(triton_requirements_path)
+weaviate_deps = parse_requirements(weaviate_requirements_path)
+milvus_deps = parse_requirements(milvus_requirements_path)
+huggingface_deps = parse_requirements(huggingface_requirements_path)
 EXTRAS = {
-    "triton": [
-        "tritonclient[grpc]>=2.0.0",
-    ],
-    "weaviate": [
-        "weaviate-client>=4.0.0",
-    ],
-    "milvus": [
-        "pymilvus>=2.6.6",
-    ],
-    "huggingface": [
-        "datasets>=4.4.1",
-        "huggingface-hub>=0.16.0",
-    ],
-    # Convenience extra that includes everything
-    "all": [
-        "tritonclient[grpc]>=2.0.0",
-        "weaviate-client>=4.0.0",
-        "pymilvus>=2.6.6",
-        "datasets>=4.4.1",
-        "huggingface-hub>=0.16.0",
-    ],
-    # For development
-    "dev": [
-        "pytest>=7.0.0",
-    ],
+    "triton": triton_deps,
+    "weaviate": weaviate_deps,
+    "milvus": milvus_deps,
+    "huggingface": huggingface_deps,
+    "all": triton_deps + weaviate_deps + milvus_deps + huggingface_deps,
 }
 
 # Read README for long description
-try:
-    with open("README.md", "r", encoding="utf-8") as fh:
-        long_description = fh.read()
-except FileNotFoundError:
-    long_description = "Abstract benchmarking framework for vector databases and models."
+readme_file = Path(__file__).parent / "README.md"
+long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists() else "Abstract benchmarking framework for vector databases and models."
 
 setup(
     name="imsearch_eval",
