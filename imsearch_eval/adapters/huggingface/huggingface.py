@@ -7,7 +7,7 @@ This module provides all Huggingface-related adapters:
 import pandas as pd
 import random
 from datasets import load_dataset, Dataset
-from ..framework.interfaces import BenchmarkDataset
+from ...framework.interfaces import BenchmarkDataset
 
 
 class HuggingFaceDataset(BenchmarkDataset):

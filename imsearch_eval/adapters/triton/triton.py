@@ -20,8 +20,8 @@ except ImportError:
 import numpy as np
 from PIL import Image
 
-from ..framework.interfaces import ModelProvider
-from ..framework.model_utils import ModelUtils, fuse_embeddings
+from ...framework.interfaces import ModelProvider
+from ...framework.model_utils import ModelUtils, fuse_embeddings
 
 
 def _check_triton_available():

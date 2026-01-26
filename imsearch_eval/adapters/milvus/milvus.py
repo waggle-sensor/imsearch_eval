@@ -41,8 +41,8 @@ except ImportError:
     TritonModelUtils = None
     _TRITON_AVAILABLE = False
 
-from ..framework.interfaces import VectorDBAdapter, QueryResult, Query
-from ..framework.model_utils import ModelUtils
+from ...framework.interfaces import VectorDBAdapter, QueryResult, Query
+from ...framework.model_utils import ModelUtils
 
 
 def _check_milvus_available():
