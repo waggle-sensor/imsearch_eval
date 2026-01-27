@@ -18,26 +18,32 @@ def parse_requirements(requirements_path: Path) -> list[str]:
 
 # Get requirements from files
 core_requirements_path = Path(__file__).parent / "imsearch_eval/requirements.txt"
-triton_requirements_path = Path(__file__).parent / "imsearch_eval/adapters/triton/requirements.txt"
-weaviate_requirements_path = Path(__file__).parent / "imsearch_eval/adapters/weaviate/requirements.txt"
-milvus_requirements_path = Path(__file__).parent / "imsearch_eval/adapters/milvus/requirements.txt"
-huggingface_requirements_path = Path(__file__).parent / "imsearch_eval/adapters/huggingface/requirements.txt"
+adapters_dir = Path(__file__).parent / "imsearch_eval/adapters"
 
 # Core dependencies
 CORE_DEPS = parse_requirements(core_requirements_path)
 
-# Optional dependencies for different adapters
-triton_deps = parse_requirements(triton_requirements_path)
-weaviate_deps = parse_requirements(weaviate_requirements_path)
-milvus_deps = parse_requirements(milvus_requirements_path)
-huggingface_deps = parse_requirements(huggingface_requirements_path)
-EXTRAS = {
-    "triton": triton_deps,
-    "weaviate": weaviate_deps,
-    "milvus": milvus_deps,
-    "huggingface": huggingface_deps,
-    "all": triton_deps + weaviate_deps + milvus_deps + huggingface_deps,
-}
+# Automatically discover adapters and their dependencies
+EXTRAS = {}
+all_adapter_deps = []
+if adapters_dir.exists():
+    for adapter_dir in adapters_dir.iterdir():
+        # Skip non-directories and special files
+        if not adapter_dir.is_dir() or adapter_dir.name.startswith("_") or adapter_dir.name == "__pycache__":
+            continue
+        
+        adapter_name = adapter_dir.name
+        adapter_requirements_path = adapter_dir / "requirements.txt"
+        
+        # Only add adapter if it has a requirements.txt file
+        if adapter_requirements_path.exists():
+            adapter_deps = parse_requirements(adapter_requirements_path)
+            if adapter_deps:  # Only add if there are dependencies
+                EXTRAS[adapter_name] = adapter_deps
+                all_adapter_deps.extend(adapter_deps)
+# Add "all" extra that includes all adapter dependencies (deduplicated)
+# Use dict.fromkeys() to preserve order while removing duplicates
+EXTRAS["all"] = list(dict.fromkeys(all_adapter_deps))
 
 # Read README for long description
 readme_file = Path(__file__).parent / "README.md"
