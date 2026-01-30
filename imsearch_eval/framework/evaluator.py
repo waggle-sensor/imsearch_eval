@@ -131,11 +131,11 @@ class BenchmarkEvaluator:
             query_stats = {
                 query_id_col: query_id,
                 "query": query,
-                "total_results": 0,
+                "total_images": 0,
                 "correctly_returned": 0,
                 "incorrectly_returned": 0,
-                "relevant_results": 0,
-                "non_relevant_results": 0,
+                "relevant_images": 0,
+                "non_relevant_images": 0,
                 "accuracy": 0.0,
                 "precision": 0.0,
                 "recall": 0.0,
@@ -157,10 +157,7 @@ class BenchmarkEvaluator:
             # Check if this result belongs to the query
             if row.get(f"queried_on_{query_id_col}") == row.get(query_id_col):
                 correct_retrieval += 1
-            # Check relevance
-            if row.get(relevance_col, 0):
-                relevant_results += 1
-        
+                relevant_results += row.get(relevance_col, 0)
         incorrect_retrieval = total_results - correct_retrieval
         non_relevant_results = total_results - relevant_results
 
@@ -179,11 +176,11 @@ class BenchmarkEvaluator:
         query_stats = {
             query_id_col: query_id,
             "query": query,
-            "total_results": total_results,
+            "total_images": total_results,
             "correctly_returned": correct_retrieval,
             "incorrectly_returned": incorrect_retrieval,
-            "relevant_results": relevant_results,
-            "non_relevant_results": non_relevant_results,
+            "relevant_images": relevant_results,
+            "non_relevant_images": non_relevant_results,
             "accuracy": correct_retrieval / total_results if total_results else 0.0,
             "precision": relevant_results / total_results if total_results else 0.0,
             "recall": relevant_results / relevant_in_dataset if relevant_in_dataset else 0.0,
