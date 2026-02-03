@@ -2,6 +2,7 @@
 
 Abstract, extensible framework for benchmarking vector databases and models across different datasets for Image Search and caption generation.
 
+[![Create Release on Version Change](https://github.com/waggle-sensor/imsearch_eval/actions/workflows/release.yml/badge.svg)](https://github.com/waggle-sensor/imsearch_eval/actions/workflows/release.yml)
 ## Installation
 
 ### Core Framework Only
