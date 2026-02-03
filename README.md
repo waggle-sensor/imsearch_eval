@@ -19,6 +19,11 @@ pip install imsearch_eval
 pip install imsearch_eval[triton]
 ```
 
+**HuggingFace adapters** (for loading datasets from Hugging Face Hub):
+```bash
+pip install imsearch_eval[huggingface]
+```
+
 **Weaviate adapters** (includes Triton, as WeaviateAdapter uses TritonModelUtils):
 ```bash
 pip install imsearch_eval[weaviate]
@@ -47,6 +52,7 @@ cd imsearch_eval
 pip install -e .  # Core only
 # Or with extras:
 pip install -e ".[triton]"
+pip install -e ".[huggingface]"
 pip install -e ".[weaviate]"
 pip install -e ".[milvus]"
 pip install -e ".[all]"
@@ -123,6 +129,13 @@ imsearch_eval/
 - **`Config`**: Abstract interface for configuration/hyperparameters
 - **`QueryResult`**: Container for query results
 
+### Helper Utilities (`imsearch_eval.framework.model_utils`)
+
+- **`fuse_embeddings()`**: Utility function to combine image and text embeddings
+  - Parameters: `img_emb` (numpy array), `txt_emb` (numpy array), `alpha` (float, default: 0.5)
+  - Returns: Normalized fused embedding vector
+  - Useful for combining multimodal embeddings with a weighted average
+
 ### Available Adapters
 
 #### Triton Adapters (`imsearch_eval.adapters.triton`)
@@ -154,11 +167,23 @@ imsearch_eval/
 
 **Dependencies**: `pymilvus>=2.6.6`, `tritonclient[grpc]` (for embedding generation)
 
+#### HuggingFace Adapters (`imsearch_eval.adapters.huggingface`)
+
+- **`HuggingFaceDataset`**: Implements `BenchmarkDataset` interface for loading datasets from Hugging Face Hub
+  - Loads datasets directly from Hugging Face using the `datasets` library
+  - Supports dataset splits, sampling, and random seeding
+  - Provides both `load()` (returns pandas DataFrame) and `load_as_dataset()` (returns Hugging Face Dataset) methods
+
+**Dependencies**: `datasets`, `pandas`
+
 ### Evaluator (`imsearch_eval.framework.evaluator`)
 
 - **`BenchmarkEvaluator`**: Main evaluation class that works with any combination of adapters and benchmark datasets
-- Computes metrics: NDCG, precision, recall, accuracy
-- Supports parallel query processing
+- Computes metrics: NDCG (for multiple score columns), precision, recall, accuracy
+- Supports parallel query processing with configurable workers
+- Automatically computes NDCG for all available score columns (e.g., `rerank_score`, `clip_score`, `score`, `distance`)
+- Supports numeric relevance scores (not just binary 0/1)
+- Only counts relevance for correctly retrieved results (results that belong to the query)
 
 ## Usage
 
@@ -176,14 +201,14 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
 
 - **Query text**: The text sent to `VectorDBAdapter.search(...)`.
 - **Query id**: A stable identifier used to group rows belonging to the same query.
-- **Relevance label**: Binary label for each row/item (1 = relevant, 0 = not relevant). Used for precision/recall/NDCG.
+- **Relevance label**: Relevance score for each row/item. Can be binary (1 = relevant, 0 = not relevant) or numeric (e.g., 0.0-1.0 for graded relevance). Used for precision/recall/NDCG. The evaluator sums relevance values, so numeric scores are supported.
 
 #### Optional (but common) fields for image search
 
 - **Image**: A file path/URL/bytes you use when building embeddings or generating captions (consumed by your `BenchmarkDataset` / adapter, not the core evaluator).
-- **Ranking score(s)**: If your search results include a score column like `rerank_score`, `clip_score`, `score`, or `distance`, the evaluator will use the first one it finds to compute NDCG.
+- **Ranking score(s)**: If your search results include score columns like `rerank_score`, `clip_score`, `score`, or `distance`, the evaluator will compute NDCG for each available score column. The default order of preference is: `["rerank_score", "clip_score", "score", "distance"]`. You can customize this via the `score_columns` parameter.
 - **License / rights_holder**: Useful when combining datasets, otherwise optional.
-- **Additional metadata**: Any extra fields you want to use for result breakdowns (e.g., animalspecies category). These do **not** change the metrics; they’re just copied into the results table.
+- **Additional metadata**: Any extra fields you want to use for result breakdowns (e.g., animalspecies category). These do **not** change the metrics; they're just copied into the results table.
 
 ### Basic Usage Pattern
 
@@ -256,21 +281,65 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
        model_provider=model_provider,
        dataset=dataset,
        collection_name="my_collection",
-       query_method="clip_hybrid_query"  # Query type (e.g., "clip_hybrid_query" for Weaviate/Milvus)
+       query_method="clip_hybrid_query",  # Query type (e.g., "clip_hybrid_query" for Weaviate/Milvus)
+       limit=25,  # Maximum number of results per query (default: 25)
+       target_vector="default",  # Vector space to search in (default: "default")
+       score_columns=["rerank_score", "clip_score", "score", "distance"],  # Columns to compute NDCG for
+       query_parameters={}  # Additional parameters passed to query method
    )
    
-   results, stats = evaluator.evaluate_queries(split="test")
+   # Evaluate queries with parallel processing
+   results, stats = evaluator.evaluate_queries(
+       split="test",
+       query_batch_size=100,  # Number of queries per batch (default: 100)
+       workers=0,  # Number of parallel workers (0 = use all CPUs, default: 0)
+       sample_size=None,  # Limit number of samples (None = all, default: None)
+       seed=None  # Random seed for sampling (default: None)
+   )
    ```
 
-### Query Method Parameter
+### Evaluator Parameters
 
-The `query_method` parameter in `BenchmarkEvaluator` is passed to the `Query.query()` method:
+#### `BenchmarkEvaluator` Initialization Parameters
 
-- **For Weaviate**: `query_method` can be `"clip_hybrid_query"`, `"hybrid_query"`, or `"colbert_query"`, or a custom callable function
-- **For Milvus**: `query_method` can be `"clip_hybrid_query"`, `"vector_query"`, or a custom callable function
-- **For other vector DBs**: Implement your own query types in your `Query` implementation
-- The `Query.query()` method routes to the appropriate implementation based on `query_method`
-- `query_method` can also be a callable function for custom query logic
+- **`vector_db`**: Vector database adapter instance (required)
+- **`model_provider`**: Model provider instance (required)
+- **`dataset`**: Benchmark dataset instance (required)
+- **`collection_name`**: Name of the collection to search (default: `"default"`)
+- **`query_method`**: Method/type of query to perform (default: `None`)
+  - **For Weaviate**: Can be `"clip_hybrid_query"`, `"hybrid_query"`, `"colbert_query"`, or a custom callable function
+  - **For Milvus**: Can be `"clip_hybrid_query"`, `"vector_query"`, or a custom callable function
+  - **For other vector DBs**: Implement your own query types in your `Query` implementation
+  - The `Query.query()` method routes to the appropriate implementation based on `query_method`
+  - `query_method` can also be a callable function for custom query logic
+- **`limit`**: Maximum number of results to return per query (default: `25`)
+- **`target_vector`**: Name of the vector space to search in (default: `"default"`). Useful for multi-vector search scenarios.
+- **`score_columns`**: List of column names to try for NDCG computation, in order of preference (default: `["rerank_score", "clip_score", "score", "distance"]`). The evaluator will compute NDCG for each column that exists in the results.
+- **`query_parameters`**: Additional parameters passed to the specific query method (default: `{}`). These are passed as `**kwargs` to the query method.
+
+#### `evaluate_queries()` Parameters
+
+- **`query_batch_size`**: Number of queries to submit in one batch (default: `100`)
+- **`dataset`**: Optional pre-loaded dataset DataFrame. If `None`, will load using `dataset.load()` (default: `None`)
+- **`split`**: Dataset split to use if loading dataset (default: `"test"`)
+- **`sample_size`**: Number of samples to load from the dataset. If `None`, loads all samples (default: `None`)
+- **`seed`**: Seed for random number generator when sampling. If `None`, uses a random seed (default: `None`)
+- **`workers`**: Number of workers to use for parallel processing. If `0`, uses all available CPUs (default: `0`)
+
+### Evaluation Metrics
+
+The evaluator computes the following metrics for each query:
+
+- **`correctly_returned`**: Number of results that belong to the query (i.e., `queried_on_query_id == query_id`)
+- **`incorrectly_returned`**: Number of results that don't belong to the query
+- **`relevant_images`**: Sum of relevance scores for correctly retrieved results (supports numeric relevance, not just binary)
+- **`non_relevant_images`**: Total results minus relevant results
+- **`accuracy`**: `correctly_returned / total_results` - Proportion of results that belong to the query
+- **`precision`**: `relevant_images / total_results` - Proportion of retrieved results that are relevant
+- **`recall`**: `relevant_images / relevant_in_dataset` - Proportion of relevant items in dataset that were retrieved
+- **`{score_column}_NDCG`**: Normalized Discounted Cumulative Gain computed for each score column found in results (e.g., `rerank_score_NDCG`, `clip_score_NDCG`)
+
+**Important**: Relevance is only counted for correctly retrieved results (results that belong to the query). This ensures that precision and recall metrics are accurate.
 
 ### Model Names
 
@@ -448,3 +517,8 @@ caption = model_provider.generate_caption(image, model_name="gemma3")
 - **Consistent**: Same evaluation metrics and methodology
 - **Type Safe**: Abstract interfaces ensure all implementations provide required functionality
 - **Flexible**: Each implementation can define its own query types and model names
+- **Robust Error Handling**: Gracefully handles query errors and empty results, logging errors and returning default statistics
+- **Parallel Processing**: Configurable parallel query evaluation with progress bars
+- **Multiple NDCG Scores**: Automatically computes NDCG for all available score columns in results
+- **Numeric Relevance Support**: Supports both binary (0/1) and numeric (0.0-1.0) relevance scores
+- **Accurate Metrics**: Only counts relevance for correctly retrieved results to ensure metric accuracy
