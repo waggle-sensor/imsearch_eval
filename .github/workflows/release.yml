@@ -1,0 +1,105 @@
+name: Create Release on Version Change
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'setup.py'
+
+jobs:
+  check-version-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for tags
+    
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+    
+      - name: Extract version from setup.py
+        id: extract_version
+        run: |
+          VERSION=$(python3 .github/scripts/extract_version.py)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Extracted version: $VERSION"
+    
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1 || git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "ℹ️ Tag $VERSION already exists, skipping release"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "✅ Tag $VERSION does not exist, will create release"
+          fi
+    
+      - name: Get previous version
+        id: previous_version
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          # Get the version from the last release tag (not just the previous commit)
+          # This ensures we compare against the actual last release, not just any commit
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -n "$LAST_TAG" ]; then
+            # Remove 'v' prefix if present
+            PREV_VERSION=$(echo "$LAST_TAG" | sed 's/^v//')
+            echo "previous_version=$PREV_VERSION" >> $GITHUB_OUTPUT
+            echo "ℹ️ Previous release version: $PREV_VERSION (from tag: $LAST_TAG)"
+          else
+            echo "previous_version=" >> $GITHUB_OUTPUT
+            echo "ℹ️ No previous release tag found (this is the first release)"
+          fi
+    
+      - name: Check if version changed
+        id: version_changed
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          CURRENT_VERSION="${{ steps.extract_version.outputs.version }}"
+          PREV_VERSION="${{ steps.previous_version.outputs.previous_version }}"
+          
+          # Since setup.py was changed (which triggered this workflow) and tag doesn't exist,
+          # create a release. The version comparison is just for informational purposes.
+          if [ -z "$PREV_VERSION" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "✅ No previous version found, will create release for $CURRENT_VERSION"
+          elif [ "$CURRENT_VERSION" != "$PREV_VERSION" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Version changed from '$PREV_VERSION' to '$CURRENT_VERSION'"
+          else
+            # Version is the same, but setup.py was changed and tag doesn't exist
+            # Create release anyway since workflow was triggered by setup.py change
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "ℹ️ Version unchanged ($CURRENT_VERSION), but setup.py was modified - will create release"
+          fi
+    
+      - name: Create Git Tag
+        if: steps.check_tag.outputs.exists == 'false' && steps.version_changed.outputs.changed == 'true'
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+          echo "✅ Created and pushed tag: $VERSION"
+    
+      - name: Create GitHub Release
+        if: steps.check_tag.outputs.exists == 'false' && steps.version_changed.outputs.changed == 'true'
+        run: |
+          python3 .github/scripts/create_release.py
+        env:
+          VERSION: ${{ steps.extract_version.outputs.version }}
+          PREV_VERSION: ${{ steps.previous_version.outputs.previous_version }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
