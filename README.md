@@ -350,6 +350,10 @@ The `ModelProvider` and `ModelUtils` interfaces accept `model_name` parameters:
 - **Caption models**: `"gemma3"`, `"qwen2_5"` (for TritonModelProvider)
 - Other implementations can define their own model names
 
+### imsearch_eval + imsearch_benchmarks + imsearch_benchmaker
+
+Combine [imsearch_benchmaker](https://github.com/waggle-sensor/imsearch_benchmaker) and [imsearch_eval](https://github.com/waggle-sensor/imsearch_eval) to create a complete pipeline for image search evaluation. imsearch_benchmaker creates the benchmarks and imsearch_eval uses them to evaluate the performance of the image search system. [imsearch_benchmarks](https://github.com/waggle-sensor/imsearch_benchmarks) is the central place to store the benchmark pipeline code, so after you create the benchmark you can store it there.
+
 ## Extending the Framework
 
 ### Adding a New Vector Database
