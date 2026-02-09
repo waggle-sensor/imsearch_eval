@@ -137,7 +137,7 @@ class NRPModelUtils(ModelUtils):
             )
 
             answer_str = response.choices[0].message.content
-            logging.info(f"[NRP] Final Generated Description: {answer_str}")
+            logging.info(f"[NRP {model_str}] Final Generated Description: {answer_str}")
             return answer_str
 
         except Exception as e:
