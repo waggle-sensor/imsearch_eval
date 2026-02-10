@@ -35,6 +35,11 @@ pip install imsearch_eval[weaviate]
 pip install imsearch_eval[milvus]
 ```
 
+**NRP adapters** (via NRP Envoy AI Gateway; [available models](https://nrp.ai/documentation/userdocs/ai/llm-managed/#available-models)):
+```bash
+pip install imsearch_eval[nrp]
+```
+
 **All adapters**:
 ```bash
 pip install imsearch_eval[all]
@@ -56,6 +61,7 @@ pip install -e ".[triton]"
 pip install -e ".[huggingface]"
 pip install -e ".[weaviate]"
 pip install -e ".[milvus]"
+pip install -e ".[nrp]"
 pip install -e ".[all]"
 ```
 
@@ -108,6 +114,7 @@ imsearch_eval/
 └── adapters/                     # Shared concrete implementations
     ├── __init__.py             # Exports all adapters
     ├── triton.py               # TritonModelProvider, TritonModelUtils
+    ├── nrp.py                  # NRPModelProvider, NRPModelUtils
     ├── weaviate.py             # WeaviateAdapter, WeaviateQuery
     └── milvus.py               # MilvusAdapter, MilvusQuery
 ```
@@ -176,6 +183,15 @@ imsearch_eval/
   - Provides both `load()` (returns pandas DataFrame) and `load_as_dataset()` (returns Hugging Face Dataset) methods
 
 **Dependencies**: `datasets`, `pandas`
+
+#### NRP Adapters (`imsearch_eval.adapters.nrp`)
+
+- **`NRPModelUtils`**: NRP-based implementation of `ModelUtils`
+- **`NRPModelProvider`**: Model provider for the [NRP Envoy AI Gateway](https://nrp.ai/documentation/userdocs/ai/llm-managed/#available-models)
+
+**Caption models**: `gemma3`, `qwen3`, `gpt-oss`, `kimi`, `glm-4.7`, `minimax-m2`, `glm-v`.
+
+**Dependencies**: `openai`
 
 ### Evaluator (`imsearch_eval.framework.evaluator`)
 
@@ -347,7 +363,7 @@ The evaluator computes the following metrics for each query:
 The `ModelProvider` and `ModelUtils` interfaces accept `model_name` parameters:
 
 - **Embedding models**: `"clip"`, `"colbert"`, `"align"` (for TritonModelProvider)
-- **Caption models**: `"gemma3"`, `"qwen2_5"` (for TritonModelProvider)
+- **Caption models**: `"gemma3"`, `"qwen2_5"` (for TritonModelProvider); for NRP: `"gemma3"`, `"qwen3"`, `"gpt-oss"`, `"kimi"`, `"glm-4.7"`, `"minimax-m2"`, `"glm-v"` (NRP supports only `generate_caption`, not embeddings)
 - Other implementations can define their own model names
 
 ### imsearch_eval + imsearch_benchmarks + imsearch_benchmaker
@@ -511,6 +527,18 @@ caption = model_utils.generate_caption(image, model_name="gemma3")
 model_provider = TritonModelProvider(triton_client)
 embedding = model_provider.get_embedding("text", image=None, model_name="clip")
 caption = model_provider.generate_caption(image, model_name="gemma3")
+```
+
+### Example: Using the NRP Model Provider (caption only)
+
+NRP uses the [Envoy AI Gateway](https://nrp.ai/documentation/userdocs/ai/llm-managed/#available-models). Pass your API key (defaults to environment variable "NRP_API_KEY") (and optionally `base_url`); the provider creates the OpenAI-compatible client internally:
+
+```python
+import os
+from imsearch_eval.adapters import NRPModelProvider
+
+model_provider = NRPModelProvider()
+caption = model_provider.generate_caption(image, prompt="Describe this image in detail.", model_name="gemma3")
 ```
 
 ## Key Features

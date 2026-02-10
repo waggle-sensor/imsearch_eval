@@ -7,7 +7,7 @@ Adapters are available as optional dependencies.
 from setuptools import setup, find_packages
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 def parse_requirements(requirements_path: Path) -> list[str]:
     """Helper function to parse requirements file, filtering out empty lines and comments."""

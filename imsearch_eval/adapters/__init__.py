@@ -30,6 +30,14 @@ try:
 except ImportError:
     HuggingFaceDataset = None
 
+try:
+    from .nrp import CaptionModelSelector, NRPModelProvider, NRPModelUtils
+    _AVAILABLE_ADAPTERS['nrp'] = ['CaptionModelSelector', 'NRPModelProvider', 'NRPModelUtils']
+except ImportError:
+    CaptionModelSelector = None
+    NRPModelProvider = None
+    NRPModelUtils = None
+
 # Build __all__ based on what's available
 __all__ = []
 if TritonModelProvider is not None:
@@ -40,3 +48,5 @@ if MilvusAdapter is not None:
     __all__.extend(['MilvusAdapter', 'MilvusQuery'])
 if HuggingFaceDataset is not None:
     __all__.extend(['HuggingFaceDataset'])
+if NRPModelProvider is not None:
+    __all__.extend(['CaptionModelSelector', 'NRPModelProvider', 'NRPModelUtils'])
