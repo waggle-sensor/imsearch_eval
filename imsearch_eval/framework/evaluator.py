@@ -225,7 +225,7 @@ class BenchmarkEvaluator:
 
         # Get unique queries along with their metadata
         query_col = self.dataset.get_query_column()
-        unique_queries = dataset.drop_duplicates(subset=[query_col])
+        unique_queries = dataset.drop_duplicates(subset=[query_col], keep="first")
         total_queries = len(unique_queries)
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
