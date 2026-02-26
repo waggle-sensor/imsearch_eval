@@ -196,7 +196,7 @@ imsearch_eval/
 ### Evaluator (`imsearch_eval.framework.evaluator`)
 
 - **`BenchmarkEvaluator`**: Main evaluation class that works with any combination of adapters and benchmark datasets
-- Computes metrics: NDCG (for multiple score columns), precision, recall, accuracy
+- Computes metrics: NDCG (for multiple score columns), precision, recall, accuracy, MRR (mean reciprocal rank) for each score column, Success@k (hit rate)
 - Supports parallel query processing with configurable workers
 - Automatically computes NDCG for all available score columns (e.g., `rerank_score`, `clip_score`, `score`, `distance`)
 - Supports numeric relevance scores (not just binary 0/1)
@@ -354,6 +354,8 @@ The evaluator computes the following metrics for each query:
 - **`accuracy`**: `correctly_returned / total_results` - Proportion of results that belong to the query
 - **`precision`**: `relevant_images / total_results` - Proportion of retrieved results that are relevant
 - **`recall`**: `relevant_images / relevant_in_dataset` - Proportion of relevant items in dataset that were retrieved
+- **`reciprocal_rank`**: 1 / (1-based rank of the first relevant result in the returned list); 0 if no relevant result in top-k. **MRR** = `query_stats_df["reciprocal_rank"].mean()` across queries.
+- **`hit`**: 1 if at least one relevant result is in the results, else 0. **Success@k** (hit rate) = `query_stats_df["hit"].mean()` across queries. k is the evaluator's `limit` or the number of returned results.
 - **`{score_column}_NDCG`**: Normalized Discounted Cumulative Gain computed for each score column found in results (e.g., `rerank_score_NDCG`, `clip_score_NDCG`)
 
 **Important**: Relevance is only counted for correctly retrieved results (results that belong to the query). This ensures that precision and recall metrics are accurate.
@@ -553,5 +555,6 @@ caption = model_provider.generate_caption(image, prompt="Describe this image in 
 - **Robust Error Handling**: Gracefully handles query errors and empty results, logging errors and returning default statistics
 - **Parallel Processing**: Configurable parallel query evaluation with progress bars
 - **Multiple NDCG Scores**: Automatically computes NDCG for all available score columns in results
+- **MRR and Success@k**: Per-query reciprocal rank and hit indicator; aggregate as mean for MRR and Success@k (hit rate)
 - **Numeric Relevance Support**: Supports both binary (0/1) and numeric (0.0-1.0) relevance scores
 - **Accurate Metrics**: Only counts relevance for correctly retrieved results to ensure metric accuracy

@@ -38,6 +38,23 @@ def compute_ndcg(df: pd.DataFrame, relevance_col: str, sortby: str = "rerank_sco
     # Compute NDCG using Scikit-Learn
     return ndcg_score(y_true, y_score)
 
+def compute_reciprocal_rank(df: pd.DataFrame, relevance_col: str, sortby: str = "rerank_score") -> float:
+    """
+    Compute Reciprocal Rank.
+    Args:
+        df: DataFrame containing search results with relevance labels
+        relevance_col: Column name containing relevance labels
+        sortby: Column to sort by (e.g., "rerank_score")
+    Returns:
+        float: Reciprocal Rank score
+    """
+    # Reciprocal rank: 1 / (1-based rank of first relevant result); 0 if none in top-k
+    reciprocal_rank = 0.0
+    for rank, (_, row) in enumerate(df.iterrows(), start=1):
+        if row.get(relevance_col, 0) > 0:
+            reciprocal_rank = 1.0 / rank
+            break
+    return reciprocal_rank
 
 class BenchmarkEvaluator:
     """Abstract evaluator for benchmarking vector database and model combinations."""
@@ -139,6 +156,7 @@ class BenchmarkEvaluator:
                 "accuracy": 0.0,
                 "precision": 0.0,
                 "recall": 0.0,
+                "hit": 0,
             }
             
             # Add metadata columns
@@ -172,6 +190,16 @@ class BenchmarkEvaluator:
                 ndcg = compute_ndcg(results_df, relevance_col, sortby=col)
                 ndcg_scores[f"{col}_NDCG"] = ndcg
 
+        # Success: 1 if at least one relevant in results, else 0
+        hit = 1 if relevant_results > 0 else 0
+
+        # Compute Reciprocal Rank to evaluate ranking
+        rr_scores = {}
+        for col in self.score_columns:
+            if col in results_df.columns:
+                rr = compute_reciprocal_rank(results_df, relevance_col, sortby=col)
+                rr_scores[f"{col}_reciprocal_rank"] = rr
+
         # Store per-query statistics
         query_stats = {
             query_id_col: query_id,
@@ -184,7 +212,9 @@ class BenchmarkEvaluator:
             "accuracy": correct_retrieval / total_results if total_results else 0.0,
             "precision": relevant_results / total_results if total_results else 0.0,
             "recall": relevant_results / relevant_in_dataset if relevant_in_dataset else 0.0,
+            "hit": hit,
             **ndcg_scores,
+            **rr_scores,
         }
         
         # Add metadata columns
