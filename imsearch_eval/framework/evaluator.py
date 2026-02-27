@@ -48,9 +48,12 @@ def compute_reciprocal_rank(df: pd.DataFrame, relevance_col: str, sortby: str = 
     Returns:
         float: Reciprocal Rank score
     """
+    # Ensure results are sorted (higher score = better ranking)
+    df_sorted = df.sort_values(sortby, ascending=False)
+    
     # Reciprocal rank: 1 / (1-based rank of first relevant result); 0 if none in top-k
     reciprocal_rank = 0.0
-    for rank, (_, row) in enumerate(df.iterrows(), start=1):
+    for rank, (_, row) in enumerate(df_sorted.iterrows(), start=1):
         if row.get(relevance_col, 0) > 0:
             reciprocal_rank = 1.0 / rank
             break
