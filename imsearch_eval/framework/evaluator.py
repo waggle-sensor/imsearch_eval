@@ -1,10 +1,12 @@
 """Abstract benchmark evaluation framework."""
 
 import os
+import numpy as np
 import pandas as pd
 import logging
-from typing import Dict, Any, Tuple, List, Callable
+from typing import Dict, Any, Tuple, List, Callable, Optional
 from sklearn.metrics import ndcg_score
+from sklearn.metrics.pairwise import cosine_similarity
 from concurrent.futures import ThreadPoolExecutor
 from .interfaces import VectorDBAdapter, ModelProvider, QueryResult, BenchmarkDataset
 from .helpers import BatchedIterator
@@ -59,6 +61,26 @@ def compute_reciprocal_rank(df: pd.DataFrame, relevance_col: str, sortby: str = 
             break
     return reciprocal_rank
 
+
+def compute_ils(vectors: np.ndarray) -> float:
+    """
+    Compute Intra-List Similarity (ILS) as the average pairwise cosine similarity.
+
+    Args:
+        vectors: 2D array of shape (n_items, dim) with one embedding per row.
+
+    Returns:
+        Mean pairwise cosine similarity (ILS), or np.nan if n_items < 2.
+    """
+    if vectors is None or len(vectors) < 2:
+        return np.nan
+    sim = cosine_similarity(vectors)
+    n = sim.shape[0]
+    # Upper triangle excluding diagonal: number of pairs = n*(n-1)/2
+    triu_indices = np.triu_indices(n, k=1)
+    return float(np.mean(sim[triu_indices]))
+
+
 class BenchmarkEvaluator:
     """Abstract evaluator for benchmarking vector database and model combinations."""
     
@@ -72,11 +94,12 @@ class BenchmarkEvaluator:
         limit: int = 25,
         score_columns: List[str] = None,
         target_vector: str = "default",
-        query_parameters: Dict[str, Any] = {}
+        query_parameters: Dict[str, Any] = {},
+        vector_column: Optional[str] = "vector",
     ):
         """
         Initialize the benchmark evaluator.
-        
+
         Args:
             vector_db: Vector database adapter instance
             model_provider: Model provider instance
@@ -87,6 +110,7 @@ class BenchmarkEvaluator:
             score_columns: List of column names to try for NDCG computation (in order of preference)
             target_vector: Name of the vector space to search in
             query_parameters: Additional parameters for querying passed to the specific query method (e.g. query_parameters={"limit": 25, "target_vector": "clip"})
+            vector_column: Column name in the search result DataFrame that holds the embedding vector (list or 1D array) per row; used for ILS/diversity. Set to None to disable diversity computation. Default "vector" matches Weaviate/Milvus adapters.
         """
         self.vector_db = vector_db
         self.model_provider = model_provider
@@ -97,6 +121,7 @@ class BenchmarkEvaluator:
         self.score_columns = score_columns or ["rerank_score", "clip_score", "score", "distance"]
         self.target_vector = target_vector
         self.query_parameters = query_parameters
+        self.vector_column = vector_column
     
     def evaluate_query(
         self, 
@@ -160,8 +185,9 @@ class BenchmarkEvaluator:
                 "precision": 0.0,
                 "recall": 0.0,
                 "hit": 0,
+                "diversity": 0,
             }
-            
+
             # Add metadata columns
             for col in metadata_cols:
                 query_stats[col] = query_row.get(col, "")
@@ -203,6 +229,25 @@ class BenchmarkEvaluator:
                 rr = compute_reciprocal_rank(results_df, relevance_col, sortby=col)
                 rr_scores[f"{col}_reciprocal_rank"] = rr
 
+        # Compute diversity (1 - ILS) when vector column is present
+        diversity = np.nan
+        if self.vector_column is not None and self.vector_column in results_df.columns:
+            try:
+                vec_col = results_df[self.vector_column]
+                rows = []
+                for v in vec_col:
+                    if v is None or (not isinstance(v, (list, np.ndarray))):
+                        rows = []
+                        break
+                    rows.append(np.asarray(v, dtype=float))
+                if len(rows) >= 2:
+                    vectors = np.array(rows)
+                    ils = compute_ils(vectors)
+                    if not np.isnan(ils):
+                        diversity = 1.0 - ils
+            except (ValueError, TypeError):
+                pass
+
         # Store per-query statistics
         query_stats = {
             query_id_col: query_id,
@@ -216,6 +261,7 @@ class BenchmarkEvaluator:
             "precision": relevant_results / total_results if total_results else 0.0,
             "recall": relevant_results / relevant_in_dataset if relevant_in_dataset else 0.0,
             "hit": hit,
+            "diversity": diversity,
             **ndcg_scores,
             **rr_scores,
         }
