@@ -8,7 +8,7 @@
   * Fair comparison across queries
   * Fair comparison across model versions
   * Reproducibility
-
+>NOTE: Most of the time k=response_limit aka the number of results returned by the VectorDBAdapter.search() method.
 ---
 
 ### 2️⃣ Problem Context
@@ -34,10 +34,16 @@ Use a combination of ranking-sensitive and top-K metrics:
 
 * **Success@k (Hit Rate@k)**
 
-  * Measures whether at least one relevant result appears in the top 25.
+  * Measures whether at least one relevant result appears in the top k.
   * Easy to interpret for stakeholders.
   * Reflects practical user satisfaction.
 
+* **Diversity (1 − ILS)**
+
+  * Measures how diverse (non-redundant) the top-k list is based on the cosine similarity of the retrieved item vectors. Meaning if the vector was computed using the image and caption, the diversity would depend on the image and caption. This means that metadata (eg; location, time, etc) would not be considered for diversity. Unless you are also computing the vector using the metadata.
+  * ILS (Intra-List Similarity) is the average pairwise cosine similarity of the retrieved item vectors; diversity = 1 − ILS, so **higher is more diverse**.
+  * Requires result vectors (e.g. returned by Weaviate/Milvus adapters under the `"vector"` column). When vectors are missing or invalid, diversity is reported as NaN.
+>NOTE:If diversity is not important: For example, if you only care that the top results include relevant items, but not necessarily diverse. Use this as a Supporting Metric.
 ---
 
 ### Supporting Metrics
