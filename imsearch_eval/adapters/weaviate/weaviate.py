@@ -123,7 +123,7 @@ class WeaviateQuery(Query):
                 logging.warning(f"Invalid {coordinate_type} value found for obj {obj.uuid}")
         return 0.0
     
-    def _extract_object_data(self, obj) -> dict:
+    def _extract_object_data(self, obj, target_vector: str) -> dict:
         """
         Extract object data from Weaviate result.
         
@@ -160,6 +160,10 @@ class WeaviateQuery(Query):
                         # Skip attributes that can't be accessed
                         continue
         
+        # Extract vector if present
+        if hasattr(obj, 'vector') and obj.vector is not None:
+            result['vector'] = obj.vector[target_vector] if target_vector in obj.vector else None
+
         # Handle location coordinates if present
         if hasattr(obj, 'properties') and obj.properties and "location" in obj.properties:
             location_lat = self.get_location_coordinate(obj, "latitude")
@@ -204,6 +208,7 @@ class WeaviateQuery(Query):
         res = collection.query.hybrid(
             query=near_text,
             target_vector=target_vector,
+            include_vector=target_vector,
             fusion_type=HybridFusion.RELATIVE_SCORE,
             auto_limit=autocut_jumps if autocut_jumps > 0 else None,
             limit=limit,
@@ -271,6 +276,7 @@ class WeaviateQuery(Query):
         res = collection.query.near_vector(
             near_vector=colbert_vector,
             target_vector=target_vector,
+            include_vector=target_vector,
             auto_limit=autocut_jumps if autocut_jumps > 0 else None,
             limit=limit,
             return_metadata=MetadataQuery(distance=True),
@@ -284,7 +290,7 @@ class WeaviateQuery(Query):
         # Extract results
         objects = []
         for obj in res.objects:
-            obj_data = self._extract_object_data(obj)
+            obj_data = self._extract_object_data(obj, target_vector)
             objects.append(obj_data)
         
         return pd.DataFrame(objects)
@@ -334,6 +340,7 @@ class WeaviateQuery(Query):
         res = collection.query.hybrid(
             query=near_text,
             target_vector=target_vector,
+            include_vector=target_vector,
             fusion_type=HybridFusion.RELATIVE_SCORE,
             auto_limit=autocut_jumps if autocut_jumps > 0 else None,
             limit=limit,
@@ -351,7 +358,7 @@ class WeaviateQuery(Query):
         # Extract results
         objects = []
         for obj in res.objects:
-            obj_data = self._extract_object_data(obj)
+            obj_data = self._extract_object_data(obj, target_vector)
             objects.append(obj_data)
         
         return pd.DataFrame(objects)
