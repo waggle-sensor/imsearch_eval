@@ -234,9 +234,32 @@ class BenchmarkEvaluator:
         if self.vector_column is not None and self.vector_column in results_df.columns:
             try:
                 vec_col = results_df[self.vector_column]
+                # debugging diversity
+                non_null_vectors = int(vec_col.notna().sum())
+                logging.debug(
+                    "Diversity check for query_id=%s vector_column=%s rows=%s non_null_vectors=%s",
+                    query_id,
+                    self.vector_column,
+                    len(vec_col),
+                    non_null_vectors,
+                )
                 rows = []
                 for v in vec_col:
-                    if v is None or (not isinstance(v, (list, np.ndarray))):
+                    # debugging diversity
+                    # if v is None or (not isinstance(v, (list, np.ndarray))):
+                    if v is None or (isinstance(v, float) and np.isnan(v)):
+                        logging.debug(
+                            "Skipping diversity for query_id=%s: found missing vector value",
+                            query_id,
+                        )
+                        rows = []
+                        break
+                    if not isinstance(v, (list, tuple, np.ndarray)):
+                        logging.debug(
+                            "Skipping diversity for query_id=%s: invalid vector type=%s",
+                            query_id,
+                            type(v).__name__,
+                        )
                         rows = []
                         break
                     rows.append(np.asarray(v, dtype=float))
@@ -245,8 +268,39 @@ class BenchmarkEvaluator:
                     ils = compute_ils(vectors)
                     if not np.isnan(ils):
                         diversity = 1.0 - ils
+                        logging.debug(
+                            "Computed diversity for query_id=%s: ils=%.6f diversity=%.6f vector_count=%s",
+                            query_id,
+                            ils,
+                            diversity,
+                            len(rows),
+                        )
+                    else:
+                        logging.debug(
+                            "Skipping diversity for query_id=%s: ILS returned NaN",
+                            query_id,
+                        )
+                else:
+                    logging.debug(
+                        "Skipping diversity for query_id=%s: need at least 2 valid vectors, got %s",
+                        query_id,
+                        len(rows),
+                    )
             except (ValueError, TypeError):
-                pass
+                logging.exception(
+                    "Error computing diversity for query_id=%s vector_column=%s",
+                    query_id,
+                    self.vector_column,
+                )
+        elif self.vector_column is None:
+            logging.debug("Diversity disabled: vector_column is None")
+        else:
+            logging.debug(
+                "Skipping diversity for query_id=%s: vector column '%s' not found in results columns=%s",
+                query_id,
+                self.vector_column,
+                list(results_df.columns),
+            )
 
         # Store per-query statistics
         query_stats = {
