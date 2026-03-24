@@ -247,7 +247,7 @@ class WeaviateQuery(Query):
         res = collection.query.hybrid(
             query=near_text,
             target_vector=target_vector,
-            include_vector=target_vector,
+            include_vector=True,
             fusion_type=HybridFusion.RELATIVE_SCORE,
             auto_limit=autocut_jumps if autocut_jumps > 0 else None,
             limit=limit,
@@ -315,7 +315,7 @@ class WeaviateQuery(Query):
         res = collection.query.near_vector(
             near_vector=colbert_vector,
             target_vector=target_vector,
-            include_vector=target_vector,
+            include_vector=True,
             auto_limit=autocut_jumps if autocut_jumps > 0 else None,
             limit=limit,
             return_metadata=MetadataQuery(distance=True),
@@ -379,7 +379,7 @@ class WeaviateQuery(Query):
         res = collection.query.hybrid(
             query=near_text,
             target_vector=target_vector,
-            include_vector=target_vector,
+            include_vector=True,
             fusion_type=HybridFusion.RELATIVE_SCORE,
             auto_limit=autocut_jumps if autocut_jumps > 0 else None,
             limit=limit,
