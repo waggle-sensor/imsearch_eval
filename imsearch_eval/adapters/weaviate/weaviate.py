@@ -162,32 +162,8 @@ class WeaviateQuery(Query):
         
         # Extract vector if present
         if hasattr(obj, 'vector') and obj.vector is not None:
-            # result['vector'] = obj.vector[target_vector] if target_vector in obj.vector else None
-            # debugging diversity
             if isinstance(obj.vector, dict):
-                available_vectors = list(obj.vector.keys())
-                if target_vector in obj.vector:
-                    result["vector"] = obj.vector[target_vector]
-                    vector_dim = (
-                        len(result["vector"])
-                        if isinstance(result["vector"], (list, tuple))
-                        else "unknown"
-                    )
-                    logging.debug(
-                        "Extracted vector for uuid=%s target_vector=%s dim=%s available_vectors=%s",
-                        result["uuid"],
-                        target_vector,
-                        vector_dim,
-                        available_vectors,
-                    )
-                else:
-                    result["vector"] = None
-                    logging.debug(
-                        "Vector key not found for uuid=%s target_vector=%s available_vectors=%s",
-                        result["uuid"],
-                        target_vector,
-                        available_vectors,
-                    )
+                result["vector"] = obj.vector[target_vector] if target_vector in obj.vector else None
             else:
                 result["vector"] = None
                 logging.debug(

@@ -234,19 +234,8 @@ class BenchmarkEvaluator:
         if self.vector_column is not None and self.vector_column in results_df.columns:
             try:
                 vec_col = results_df[self.vector_column]
-                # debugging diversity
-                non_null_vectors = int(vec_col.notna().sum())
-                logging.debug(
-                    "Diversity check for query_id=%s vector_column=%s rows=%s non_null_vectors=%s",
-                    query_id,
-                    self.vector_column,
-                    len(vec_col),
-                    non_null_vectors,
-                )
                 rows = []
                 for v in vec_col:
-                    # debugging diversity
-                    # if v is None or (not isinstance(v, (list, np.ndarray))):
                     if v is None or (isinstance(v, float) and np.isnan(v)):
                         logging.debug(
                             "Skipping diversity for query_id=%s: found missing vector value",
@@ -268,13 +257,6 @@ class BenchmarkEvaluator:
                     ils = compute_ils(vectors)
                     if not np.isnan(ils):
                         diversity = 1.0 - ils
-                        logging.debug(
-                            "Computed diversity for query_id=%s: ils=%.6f diversity=%.6f vector_count=%s",
-                            query_id,
-                            ils,
-                            diversity,
-                            len(rows),
-                        )
                     else:
                         logging.debug(
                             "Skipping diversity for query_id=%s: ILS returned NaN",
