@@ -333,6 +333,7 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
 - **`target_vector`**: Name of the vector space to search in (default: `"default"`). Useful for multi-vector search scenarios.
 - **`score_columns`**: List of column names to try for NDCG computation, in order of preference (default: `["rerank_score", "clip_score", "score", "distance"]`). The evaluator will compute NDCG for each column that exists in the results.
 - **`query_parameters`**: Additional parameters passed to the specific query method (default: `{}`). These are passed as `**kwargs` to the query method.
+- **`vector_column`**: Column name in the search result DataFrame that holds the embedding vector per row, used for diversity (1 − ILS) (default: `"vector"`, matching Weaviate/Milvus adapters). Set to `None` to disable diversity computation.
 
 #### `evaluate_queries()` Parameters
 
@@ -357,6 +358,7 @@ The evaluator computes the following metrics for each query:
 - **`reciprocal_rank`**: 1 / (1-based rank of the first relevant result in the returned list); 0 if no relevant result in top-k. **MRR** = `query_stats_df["reciprocal_rank"].mean()` across queries.
 - **`hit`**: 1 if at least one relevant result is in the results, else 0. **Success@k** (hit rate) = `query_stats_df["hit"].mean()` across queries. k is the evaluator's `limit` or the number of returned results.
 - **`{score_column}_NDCG`**: Normalized Discounted Cumulative Gain computed for each score column found in results (e.g., `rerank_score_NDCG`, `clip_score_NDCG`)
+- **`diversity`**: Diversity as 1 − ILS (Intra-List Similarity). ILS is the average pairwise cosine similarity of the retrieved list; diversity = 1 − ILS, so higher means more diverse (less redundant) results. Computed when the result DataFrame has a vector column (default name `"vector"`; Weaviate and Milvus adapters include it). Set `vector_column=None` on the evaluator to disable.
 
 **Important**: Relevance is only counted for correctly retrieved results (results that belong to the query). This ensures that precision and recall metrics are accurate.
 

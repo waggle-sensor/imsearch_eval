@@ -143,7 +143,7 @@ class MilvusQuery(Query):
                 logging.warning(f"Invalid {coordinate_type} value found")
         return 0.0
     
-    def _extract_object_data(self, hit) -> dict:
+    def _extract_object_data(self, hit, target_vector: str) -> dict:
         """
         Extract object data from Milvus result.
         
@@ -158,6 +158,11 @@ class MilvusQuery(Query):
         
         # Extract all entity data fields dynamically
         for key, value in entity_data.items():
+            # Extract target_vector as key=vector if present, otherwise use the key as is
+            if key == target_vector:
+                result['vector'] = value
+                continue
+
             # Skip location as it's handled separately
             if key != "location":
                 result[key] = value
@@ -224,13 +229,14 @@ class MilvusQuery(Query):
             data=[embedding],
             limit=limit,
             search_params=search_params,
+            output_fields=[target_vector], #TODO: I need to add all fields here so the output includes them by default milvus only returns id and distance
         )
         
         # Extract results - in 2.6.x, results is a list of SearchResult objects
         objects = []
         for result in results:
             for hit in result:             
-                obj_data = self._extract_object_data(hit)
+                obj_data = self._extract_object_data(hit, target_vector)
                 objects.append(obj_data)
         
         return pd.DataFrame(objects)
@@ -306,13 +312,14 @@ class MilvusQuery(Query):
             reqs=[dense_req, sparse_req],
             ranker=ranker,
             limit=limit,
+            output_fields=[target_vector], #TODO: I need to add all fields here so the output includes them by default milvus only returns id and distance
         )
 
         # Flatten results
         rows = []
         for hits in results:
             for hit in hits:
-                rows.append(self._extract_object_data(hit))
+                rows.append(self._extract_object_data(hit, target_vector))
 
         return pd.DataFrame(rows)
 
