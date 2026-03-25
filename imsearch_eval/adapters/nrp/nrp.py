@@ -32,12 +32,14 @@ class CaptionModelSelector(str, Enum):
     """Supported NRP chat/multimodal models (per NRP docs; exclude deprecated)."""
 
     QWEN3 = "qwen3"
+    QWEN3_SMALL = "qwen3-small"
     GPT_OSS = "gpt-oss"
     KIMI = "kimi"
     GLM_4_7 = "glm-4.7"
     MINIMAX_M2 = "minimax-m2"
     GLM_V = "glm-v"
     GEMMA3 = "gemma3"
+    OLMO = "olmo"
 
     @classmethod
     def from_str(cls, s: str) -> "CaptionModelSelector":
