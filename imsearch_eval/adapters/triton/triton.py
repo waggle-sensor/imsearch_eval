@@ -82,7 +82,8 @@ class TritonModelUtils(ModelUtils):
         self,
         image: Image.Image,
         prompt: str,
-        model_name: str = "gemma3"
+        model_name: str = "gemma3",
+        enable_thinking: bool = True
     ) -> Optional[str]:
         """
         Generate a caption for an image using Triton.
@@ -91,13 +92,14 @@ class TritonModelUtils(ModelUtils):
             image: PIL Image to caption
             prompt: Prompt to use for the model
             model_name: Name of the model to use ("gemma3", "qwen2_5")
+            enable_thinking: Whether to enable thinking (default: True). Not all models support thinking.
         Returns:
             Generated caption string or None on error
         """
         if model_name == "gemma3":
-            return self.gemma3_run_model(image, prompt)
+            return self.gemma3_run_model(image, prompt, enable_thinking)
         elif model_name == "qwen2_5":
-            return self.qwen2_5_run_model(image, prompt)
+            return self.qwen2_5_run_model(image, prompt, enable_thinking)
         else:
             raise ValueError(f"Unknown caption model name: {model_name}")
     
@@ -261,13 +263,14 @@ class TritonModelUtils(ModelUtils):
         
         return embedding
     
-    def gemma3_run_model(self, image: Image.Image, prompt: str) -> Optional[str]:
+    def gemma3_run_model(self, image: Image.Image, prompt: str, enable_thinking: bool = True) -> Optional[str]:
         """
         Generate a caption for an image using Gemma3 model served via Triton.
         
         Args:
             image: PIL Image to caption
             prompt: Prompt to use for the model
+            enable_thinking: Whether to enable thinking (default: True). Not all models support thinking.
         Returns:
             Generated caption string or None on error
         """
@@ -304,13 +307,14 @@ class TritonModelUtils(ModelUtils):
             logging.error(f"[GEMMA3] Error during Gemma3 inference: {str(e)}")
             return None
     
-    def qwen2_5_run_model(self, image: Image.Image, prompt: str) -> Optional[str]:
+    def qwen2_5_run_model(self, image: Image.Image, prompt: str, enable_thinking: bool = True) -> Optional[str]:
         """
         Generate a caption for an image using Qwen2.5-VL model served via Triton.
         
         Args:
             image: PIL Image to caption
             prompt: Prompt to use for the model
+            enable_thinking: Whether to enable thinking (default: True). Not all models support thinking.
         Returns:
             Generated caption string or None on error
         """
@@ -380,7 +384,7 @@ class TritonModelProvider(ModelProvider):
         """
         return self.model_utils.calculate_embedding(text, image, model_name)
     
-    def generate_caption(self, image: Image.Image, prompt: str , model_name: str = "gemma3") -> str:
+    def generate_caption(self, image: Image.Image, prompt: str , model_name: str = "gemma3", enable_thinking: bool = True) -> str:
         """
         Generate a caption for an image.
         
@@ -388,9 +392,10 @@ class TritonModelProvider(ModelProvider):
             image: PIL Image to caption
             prompt: Prompt to use for the model
             model_name: Name of the model to use ("gemma3", "qwen2_5")
+            enable_thinking: Whether to enable thinking (default: True). Not all models support thinking.
         Returns:
             Generated caption string
         """
-        result = self.model_utils.generate_caption(image, prompt, model_name)
+        result = self.model_utils.generate_caption(image, prompt, model_name, enable_thinking)
         return result if result else ""
 

@@ -94,7 +94,8 @@ class NRPModelUtils(ModelUtils):
         self,
         image: Image.Image,
         prompt: str,
-        model_name: Union[CaptionModelSelector, str] = CaptionModelSelector.GEMMA3
+        model_name: Union[CaptionModelSelector, str] = CaptionModelSelector.GEMMA3,
+        enable_thinking: bool = True
     ) -> Optional[str]:
         """
         Generate a caption for an image using NRP Envoy AI Gateway.
@@ -103,7 +104,7 @@ class NRPModelUtils(ModelUtils):
             image: PIL Image to caption
             prompt: Prompt to use for the model
             model_name: NRP model (CaptionModelSelector enum or string, e.g. "gemma3", "qwen3", "glm-v").
-
+            enable_thinking: Whether to enable thinking (default: True). Not all NRP models support thinking.
         Returns:
             Generated caption string or None on error
         """
@@ -118,9 +119,10 @@ class NRPModelUtils(ModelUtils):
 
         try:
             # Do not pass max_tokens per NRP docs (https://nrp.ai/documentation/userdocs/ai/llm-managed/)
-            response = self.client.chat.completions.create(
-                model=model_str,
-                messages=[
+            # Optional: disable extended "thinking" via chat template (supported by several multimodal models).
+            create_kwargs: dict = {
+                "model": model_str,
+                "messages": [
                     {
                         "role": "user",
                         "content": [
@@ -134,7 +136,12 @@ class NRPModelUtils(ModelUtils):
                         ],
                     }
                 ],
-            )
+            }
+            if not enable_thinking:
+                create_kwargs["extra_body"] = {
+                    "chat_template_kwargs": {"enable_thinking": False},
+                }
+            response = self.client.chat.completions.create(**create_kwargs)
 
             answer_str = response.choices[0].message.content
             logging.info(f"[NRP {model_str}] Final Generated Description: {answer_str}")
@@ -181,7 +188,8 @@ class NRPModelProvider(ModelProvider):
         self,
         image: Image.Image,
         prompt: str,
-        model_name: Union[CaptionModelSelector, str] = CaptionModelSelector.GEMMA3
+        model_name: Union[CaptionModelSelector, str] = CaptionModelSelector.GEMMA3,
+        enable_thinking: bool = True,
     ) -> str:
         """
         Generate a caption for an image.
@@ -190,9 +198,12 @@ class NRPModelProvider(ModelProvider):
             image: PIL Image to caption
             prompt: Prompt to use for the model
             model_name: NRP model (CaptionModelSelector enum or string, e.g. "gemma3", "qwen3", "glm-v")
+            enable_thinking: Whether to enable thinking (default: True). Not all NRP models support thinking.
 
         Returns:
             Generated caption string (empty string on error)
         """
-        result = self.model_utils.generate_caption(image, prompt, model_name)
+        result = self.model_utils.generate_caption(
+            image, prompt, model_name, enable_thinking=enable_thinking
+        )
         return result if result else ""
