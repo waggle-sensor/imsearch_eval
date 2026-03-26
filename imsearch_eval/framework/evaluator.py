@@ -96,6 +96,7 @@ class BenchmarkEvaluator:
         target_vector: str = "default",
         query_parameters: Dict[str, Any] = {},
         vector_column: Optional[str] = "vector",
+        include_vectors_in_results: bool = False,
     ):
         """
         Initialize the benchmark evaluator.
@@ -111,6 +112,8 @@ class BenchmarkEvaluator:
             target_vector: Name of the vector space to search in
             query_parameters: Additional parameters for querying passed to the specific query method (e.g. query_parameters={"limit": 25, "target_vector": "clip"})
             vector_column: Column name in the search result DataFrame that holds the embedding vector (list or 1D array) per row; used for ILS/diversity. Set to None to disable diversity computation. Default "vector" matches Weaviate/Milvus adapters.
+            include_vectors_in_results: If False (default), drop the vector/embedding column from the returned results DataFrame
+                so it doesn't get written to CSV by accident. Diversity is computed before dropping when possible.
         """
         self.vector_db = vector_db
         self.model_provider = model_provider
@@ -122,6 +125,7 @@ class BenchmarkEvaluator:
         self.target_vector = target_vector
         self.query_parameters = query_parameters
         self.vector_column = vector_column
+        self.include_vectors_in_results = include_vectors_in_results
     
     def evaluate_query(
         self, 
@@ -305,6 +309,14 @@ class BenchmarkEvaluator:
         # Add metadata columns
         for col in metadata_cols:
             query_stats[col] = query_row.get(col, "")
+
+        # Don't return embedding vectors by default (they bloat CSV exports).
+        if (
+            not self.include_vectors_in_results
+            and self.vector_column is not None
+            and self.vector_column in results_df.columns
+        ):
+            results_df = results_df.drop(columns=[self.vector_column])
 
         return results_df, query_stats
     
