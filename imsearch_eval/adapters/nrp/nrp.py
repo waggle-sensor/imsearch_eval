@@ -28,6 +28,11 @@ except ImportError:
 from ...framework.interfaces import ModelProvider
 from ...framework.model_utils import ModelUtils
 
+
+class DeprecatedNRPModelError(ValueError):
+    """Raised when a deprecated NRP model id is used (no longer hosted on the gateway)."""
+
+
 class CaptionModelSelector(str, Enum):
     """Supported NRP chat/multimodal models (per NRP docs; exclude deprecated)."""
 
@@ -38,7 +43,7 @@ class CaptionModelSelector(str, Enum):
     GLM_4_7 = "glm-4.7"
     MINIMAX_M2 = "minimax-m2"
     GLM_V = "glm-v"
-    GEMMA3 = "gemma3"
+    GEMMA = "gemma"
     OLMO = "olmo"
 
     @classmethod
@@ -49,8 +54,17 @@ class CaptionModelSelector(str, Enum):
                 return m
         raise ValueError(f"Unsupported NRP LLM Model: {s}")
 
+    @classmethod
+    def is_deprecated(cls, model: str) -> bool:
+        """Check if a model is deprecated."""
+        return model in ["gemma3"]
+
 def _model_str(model: Union[CaptionModelSelector, str]) -> str:
     """Normalize NRPModel or str to the API model string."""
+    if isinstance(model, str) and CaptionModelSelector.is_deprecated(model):
+        raise DeprecatedNRPModelError(
+            f"The NRP model id '{model}' is deprecated and no longer hosted. "
+        )
     if isinstance(model, CaptionModelSelector):
         return model.value
     return CaptionModelSelector.from_str(model).value
@@ -96,7 +110,7 @@ class NRPModelUtils(ModelUtils):
         self,
         image: Image.Image,
         prompt: str,
-        model_name: Union[CaptionModelSelector, str] = CaptionModelSelector.GEMMA3,
+        model_name: Union[CaptionModelSelector, str] = CaptionModelSelector.GEMMA,
         enable_thinking: bool = True
     ) -> Optional[str]:
         """
@@ -105,13 +119,16 @@ class NRPModelUtils(ModelUtils):
         Args:
             image: PIL Image to caption
             prompt: Prompt to use for the model
-            model_name: NRP model (CaptionModelSelector enum or string, e.g. "gemma3", "qwen3", "glm-v").
+            model_name: NRP model (CaptionModelSelector enum or string, e.g. "gemma", "qwen3", "glm-v").
+                The string "gemma3" raises DeprecatedNRPModelError; use "gemma" (Gemma 4).
             enable_thinking: Whether to enable thinking (default: True). Not all NRP models support thinking.
         Returns:
             Generated caption string or None on error
         """
         try:
             model_str = _model_str(model_name)
+        except DeprecatedNRPModelError:
+            raise
         except ValueError:
             raise ValueError(f"Unsupported NRP LLM Model: {model_name}")
 
@@ -190,7 +207,7 @@ class NRPModelProvider(ModelProvider):
         self,
         image: Image.Image,
         prompt: str,
-        model_name: Union[CaptionModelSelector, str] = CaptionModelSelector.GEMMA3,
+        model_name: Union[CaptionModelSelector, str] = CaptionModelSelector.GEMMA,
         enable_thinking: bool = True,
     ) -> str:
         """
@@ -199,7 +216,8 @@ class NRPModelProvider(ModelProvider):
         Args:
             image: PIL Image to caption
             prompt: Prompt to use for the model
-            model_name: NRP model (CaptionModelSelector enum or string, e.g. "gemma3", "qwen3", "glm-v")
+            model_name: NRP model (CaptionModelSelector enum or string, e.g. "gemma", "qwen3", "glm-v").
+                The string "gemma3" raises DeprecatedNRPModelError; use "gemma" (Gemma 4).
             enable_thinking: Whether to enable thinking (default: True). Not all NRP models support thinking.
 
         Returns:
