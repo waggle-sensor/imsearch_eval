@@ -189,7 +189,7 @@ imsearch_eval/
 - **`NRPModelUtils`**: NRP-based implementation of `ModelUtils`
 - **`NRPModelProvider`**: Model provider for the [NRP Envoy AI Gateway](https://nrp.ai/documentation/userdocs/ai/llm-managed/#available-models)
 
-**Caption models**: `gemma3`, `qwen3`, `gpt-oss`, `kimi`, `glm-4.7`, `minimax-m2`, `glm-v`.
+**Caption models**: `gemma` (Gemma 4 on NRP; `gemma3` is no longer hosted), `qwen3`, `gpt-oss`, `kimi`, `glm-4.7`, `minimax-m2`, `glm-v`.
 
 **Dependencies**: `openai`
 
@@ -367,7 +367,7 @@ The evaluator computes the following metrics for each query:
 The `ModelProvider` and `ModelUtils` interfaces accept `model_name` parameters:
 
 - **Embedding models**: `"clip"`, `"colbert"`, `"align"` (for TritonModelProvider)
-- **Caption models**: `"gemma3"`, `"qwen2_5"` (for TritonModelProvider); for NRP: `"gemma3"`, `"qwen3"`, `"gpt-oss"`, `"kimi"`, `"glm-4.7"`, `"minimax-m2"`, `"glm-v"` (NRP supports only `generate_caption`, not embeddings)
+- **Caption models**: `"gemma3"`, `"qwen2_5"` (for TritonModelProvider); for NRP: `"gemma"` (Gemma 4; `"gemma3"` raises `DeprecatedNRPModelError`), `"qwen3"`, `"gpt-oss"`, `"kimi"`, `"glm-4.7"`, `"minimax-m2"`, `"glm-v"` (NRP supports only `generate_caption`, not embeddings)
 - Other implementations can define their own model names
 
 ### imsearch_eval + imsearch_benchmarks + imsearch_benchmaker
@@ -542,7 +542,7 @@ import os
 from imsearch_eval.adapters import NRPModelProvider
 
 model_provider = NRPModelProvider()
-caption = model_provider.generate_caption(image, prompt="Describe this image in detail.", model_name="gemma3")
+caption = model_provider.generate_caption(image, prompt="Describe this image in detail.", model_name="gemma")
 ```
 
 ## Key Features
