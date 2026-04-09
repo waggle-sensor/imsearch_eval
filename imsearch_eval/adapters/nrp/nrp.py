@@ -156,9 +156,9 @@ class NRPModelUtils(ModelUtils):
                     }
                 ],
             }
-            if not enable_thinking:
+            if enable_thinking:
                 create_kwargs["extra_body"] = {
-                    "chat_template_kwargs": {"enable_thinking": False},
+                    "chat_template_kwargs": {"enable_thinking": True},
                 }
             response = self.client.chat.completions.create(**create_kwargs)
 
