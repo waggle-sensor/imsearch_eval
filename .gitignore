@@ -30,6 +30,7 @@ ENV/
 .idea/
 *.swp
 *.swo
+.cursor/
 
 # Testing
 .pytest_cache/
