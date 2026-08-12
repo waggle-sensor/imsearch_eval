@@ -7,7 +7,7 @@ This module provides all Triton-related adapters:
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 # Check for optional dependencies
 try:
@@ -103,6 +103,55 @@ class TritonModelUtils(ModelUtils):
         else:
             raise ValueError(f"Unknown caption model name: {model_name}")
     
+    def _infer_clip(
+        self,
+        text: str,
+        image: Optional[Image.Image] = None,
+        request_logit_scale: bool = False,
+    ):
+        """
+        Run Triton CLIP and return (text_embedding, image_embedding[, logit_scale]).
+
+        On failure returns (None, None) or (None, None, None) if request_logit_scale.
+        """
+        text_bytes = text.encode("utf-8")
+        text_np = np.array([text_bytes], dtype="object")
+
+        if image is not None:
+            image_np = np.array(image).astype(np.float32)
+        else:
+            image_np = np.zeros((1, 1, 3), dtype=np.float32)
+
+        inputs = [
+            TritonClient.InferInput("text", [1], "BYTES"),
+            TritonClient.InferInput("image", list(image_np.shape), "FP32"),
+        ]
+        inputs[0].set_data_from_numpy(text_np)
+        inputs[1].set_data_from_numpy(image_np)
+
+        outputs = [
+            TritonClient.InferRequestedOutput("text_embedding"),
+            TritonClient.InferRequestedOutput("image_embedding"),
+        ]
+        if request_logit_scale:
+            outputs.append(TritonClient.InferRequestedOutput("logit_scale"))
+
+        try:
+            results = self.triton_client.infer(
+                model_name="clip", inputs=inputs, outputs=outputs
+            )
+            text_embedding = results.as_numpy("text_embedding")[0]
+            image_embedding = results.as_numpy("image_embedding")[0]
+            if request_logit_scale:
+                logit_scale = float(results.as_numpy("logit_scale").reshape(-1)[0])
+                return text_embedding, image_embedding, logit_scale
+            return text_embedding, image_embedding
+        except Exception as e:
+            logging.error(f"Error during CLIP inference: {str(e)}")
+            if request_logit_scale:
+                return None, None, None
+            return None, None
+
     def get_clip_embeddings(
         self,
         text: str,
@@ -120,46 +169,56 @@ class TritonModelUtils(ModelUtils):
         Returns:
             Fused embedding vector (numpy array) or None on error
         """
-        # Prepare inputs
-        text_bytes = text.encode("utf-8")
-        text_np = np.array([text_bytes], dtype="object")
-        
-        # Prepare image input
-        if image is not None:
-            image_np = np.array(image).astype(np.float32)
-        else:
-            image_np = np.zeros((1, 1, 3), dtype=np.float32)
-        
-        # Create Triton input objects
-        inputs = [
-            TritonClient.InferInput("text", [1], "BYTES"),
-            TritonClient.InferInput("image", list(image_np.shape), "FP32")
-        ]
-        
-        inputs[0].set_data_from_numpy(text_np)
-        inputs[1].set_data_from_numpy(image_np)
-        
-        outputs = [
-            TritonClient.InferRequestedOutput("text_embedding"),
-            TritonClient.InferRequestedOutput("image_embedding")
-        ]
-        
-        # Run inference
-        try:
-            results = self.triton_client.infer(model_name="clip", inputs=inputs, outputs=outputs)
-            text_embedding = results.as_numpy("text_embedding")[0]
-            image_embedding = results.as_numpy("image_embedding")[0]
-        except Exception as e:
-            logging.error(f"Error during CLIP inference: {str(e)}")
+        text_embedding, image_embedding = self._infer_clip(text, image)
+        if text_embedding is None:
             return None
-        
-        # Fuse embeddings
+
         if image is not None:
-            embedding = fuse_embeddings(image_embedding, text_embedding, alpha=alpha)
-        else:
-            embedding = text_embedding
-        
-        return embedding
+            return fuse_embeddings(image_embedding, text_embedding, alpha=alpha)
+        return text_embedding
+
+    def get_clip_embedding_pair(
+        self,
+        text: str,
+        image: Image.Image,
+    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Return (caption_embedding, image_embedding) from Triton CLIP without fusion.
+
+        Used when indexing separate caption_vector and image_vector fields.
+        """
+        if image is None:
+            raise ValueError("image is required for get_clip_embedding_pair")
+        text_embedding, image_embedding = self._infer_clip(text, image)
+        if text_embedding is None or image_embedding is None:
+            return None, None
+        return text_embedding, image_embedding
+
+    def clip_image_text_score(self, query: str, image: Image.Image) -> float:
+        """
+        CLIP similarity between a text query and an image via Triton.
+
+        Matches Hugging Face CLIPModel logits_per_image for a single pair:
+        L2-normalize image/text embeddings, then multiply cosine by exp(logit_scale).
+        """
+        text_embedding, image_embedding, logit_scale = self._infer_clip(
+            query, image, request_logit_scale=True
+        )
+        if text_embedding is None or image_embedding is None or logit_scale is None:
+            return 0.0
+
+        text_emb = np.asarray(text_embedding, dtype=np.float32)
+        image_emb = np.asarray(image_embedding, dtype=np.float32)
+
+        text_norm = np.linalg.norm(text_emb)
+        image_norm = np.linalg.norm(image_emb)
+        if text_norm == 0.0 or image_norm == 0.0:
+            return 0.0
+
+        text_emb = text_emb / text_norm
+        image_emb = image_emb / image_norm
+        cosine = float(np.dot(image_emb, text_emb))
+        return cosine * float(logit_scale)
     
     def get_colbert_embedding(self, text: str) -> Optional[np.ndarray]:
         """

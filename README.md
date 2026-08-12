@@ -149,6 +149,9 @@ imsearch_eval/
 #### Triton Adapters (`imsearch_eval.adapters.triton`)
 
 - **`TritonModelUtils`**: Triton-based implementation of `ModelUtils` interface
+  - `get_clip_embeddings()` — fused CLIP vector (Weaviate path)
+  - `get_clip_embedding_pair()` — separate caption/image vectors (Milvus index)
+  - `clip_image_text_score()` — query-text vs image rerank score
 - **`TritonModelProvider`**: Triton inference server model provider
 
 **Dependencies**: `tritonclient[grpc]`
@@ -166,12 +169,13 @@ imsearch_eval/
 #### Milvus Adapters (`imsearch_eval.adapters.milvus`)
 
 - **`MilvusQuery`**: Implements `Query` interface for Milvus
-  - Generic `query()` method routes to specific methods based on `query_method` parameter
-  - Supports hybrid search combining dense and sparse vectors (BM25)
-  - Provides methods: `clip_hybrid_query()`, `vector_query()`
+  - Generic `query()` method routes to specific methods based on `query_method`
+  - Production-parity dual-dense hybrid: `image_vector` + `caption_vector` + BM25 `sparse`, then CLIP image-text rerank
+  - Provides methods: `clip_hybrid_query_dual_index()` (default), `clip_hybrid_query()` (alias), `vector_query()`
 - **`MilvusAdapter`**: Implements `VectorDBAdapter` interface for Milvus
   - Uses `MilvusQuery` internally for search operations
-  - Supports multi-vector search with native hybrid search capabilities
+  - `build_benchmark_schema()` helper for dual-dense + BM25 collections
+- **Connection env**: `MILVUS_URI`, `MILVUS_TOKEN`, `MILVUS_DB` (falls back to `MILVUS_DB_NAME`)
 
 **Dependencies**: `pymilvus>=2.6.6`, `tritonclient[grpc]` (for embedding generation)
 
@@ -325,7 +329,7 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
 - **`collection_name`**: Name of the collection to search (default: `"default"`)
 - **`query_method`**: Method/type of query to perform (default: `None`)
   - **For Weaviate**: Can be `"clip_hybrid_query"`, `"hybrid_query"`, `"colbert_query"`, or a custom callable function
-  - **For Milvus**: Can be `"clip_hybrid_query"`, `"vector_query"`, or a custom callable function
+  - **For Milvus**: Can be `"clip_hybrid_query_dual_index"` (default; dual-dense + BM25 + CLIP rerank), `"clip_hybrid_query"` (alias), `"vector_query"`, or a custom callable function
   - **For other vector DBs**: Implement your own query types in your `Query` implementation
   - The `Query.query()` method routes to the appropriate implementation based on `query_method`
   - `query_method` can also be a callable function for custom query logic
