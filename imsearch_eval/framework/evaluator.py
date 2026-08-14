@@ -7,9 +7,8 @@ import logging
 from typing import Dict, Any, Tuple, List, Callable, Optional
 from sklearn.metrics import ndcg_score
 from sklearn.metrics.pairwise import cosine_similarity
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from .interfaces import VectorDBAdapter, ModelProvider, QueryResult, BenchmarkDataset
-from .helpers import BatchedIterator
 from tqdm import tqdm
 
 def compute_ndcg(df: pd.DataFrame, relevance_col: str, sortby: str = "rerank_score") -> float:
@@ -322,10 +321,11 @@ class BenchmarkEvaluator:
     
     def evaluate_queries(self, query_batch_size: int = 100, dataset: pd.DataFrame = None, split: str = "test", sample_size: int = None, seed: int = None, workers: int = 0) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Evaluate unique queries in parallel.
-        
+        Evaluate unique queries in parallel with a continuously filled worker pool.
+
         Args:
-            query_batch_size: Number of queries to submit in one batch
+            query_batch_size: Kept for API compatibility; in-flight concurrency is
+                governed by ``workers`` (ThreadPoolExecutor max_workers)
             dataset: Optional pre-loaded dataset. If None, will load using dataset.load()
             split: Dataset split to use if loading dataset
             sample_size: Number of samples to load from the dataset (if None, load all samples)
@@ -335,6 +335,7 @@ class BenchmarkEvaluator:
             Tuple of (all_results_dataframe, query_statistics_dataframe)
         """
         logging.debug("Starting Benchmark...")
+        _ = query_batch_size  # API compatibility; pool size is workers
 
         # Load dataset if not provided
         if dataset is None:
@@ -354,28 +355,39 @@ class BenchmarkEvaluator:
         query_col = self.dataset.get_query_column()
         unique_queries = dataset.drop_duplicates(subset=[query_col], keep="first")
         total_queries = len(unique_queries)
+        query_iter = unique_queries.iterrows()
+        exhausted = False
+
+        def _submit(executor, pending):
+            nonlocal exhausted
+            try:
+                _, query_row = next(query_iter)
+            except StopIteration:
+                exhausted = True
+                return
+            pending.add(executor.submit(self.evaluate_query, query_row, dataset))
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            # Create progress bar
             pbar = tqdm(
                 total=total_queries,
                 desc="Evaluating queries",
                 unit="query",
             )
-            
-            try:
-                for batch in BatchedIterator(unique_queries.iterrows(), query_batch_size):
-                    # Process in parallel
-                    futures = {
-                        executor.submit(self.evaluate_query, query_row, dataset): query_row[query_col]
-                        for _, query_row in batch
-                    }
 
-                    for future in futures:
+            try:
+                pending = set()
+                while len(pending) < num_workers and not exhausted:
+                    _submit(executor, pending)
+
+                while pending:
+                    done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                    for future in done:
                         df, stats = future.result()
                         results.append(df)
                         query_stats.append(stats)
                         pbar.update(1)
+                        if not exhausted:
+                            _submit(executor, pending)
             finally:
                 pbar.close()
 

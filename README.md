@@ -157,6 +157,7 @@ imsearch_eval/
   - `get_clip_embedding_pair()` — separate caption/image vectors (Milvus index)
   - `get_clip_query_embedding()` — encode query text once; returns `(text_embedding, logit_scale)`
   - `clip_image_text_score()` — query-text vs live image score (optional precomputed text embedding)
+  - CLIP / Gemma InferInputs use a leading batch dim of 1 so Triton `max_batch_size > 0` + `dynamic_batching { }` can combine concurrent worker calls
 - **`TritonModelProvider`**: Triton inference server model provider
 
 **Dependencies**: `tritonclient[grpc]`
@@ -179,6 +180,7 @@ imsearch_eval/
   - Provides methods: `clip_hybrid_query_dual_index()` (default), `clip_hybrid_query()` (alias), `vector_query()`
 - **`MilvusAdapter`**: Implements `VectorDBAdapter` interface for Milvus
   - Uses `MilvusQuery` internally for search operations
+  - `insert_data(..., flush=False)` + `flush_collection()` for streamed indexing
   - `build_benchmark_schema()` helper for dual-dense + BM25 collections
 - **Connection env**: `MILVUS_URI`, `MILVUS_TOKEN`, `MILVUS_DB` (falls back to `MILVUS_DB_NAME`)
 
@@ -317,7 +319,7 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
    # Evaluate queries with parallel processing
    results, stats = evaluator.evaluate_queries(
        split="test",
-       query_batch_size=100,  # Number of queries per batch (default: 100)
+       query_batch_size=100,  # Kept for API compatibility; concurrency is workers
        workers=0,  # Number of parallel workers (0 = use all CPUs, default: 0)
        sample_size=None,  # Limit number of samples (None = all, default: None)
        seed=None  # Random seed for sampling (default: None)
@@ -346,12 +348,12 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
 
 #### `evaluate_queries()` Parameters
 
-- **`query_batch_size`**: Number of queries to submit in one batch (default: `100`)
+- **`query_batch_size`**: Kept for API compatibility; in-flight concurrency is governed by `workers` (default: `100`)
 - **`dataset`**: Optional pre-loaded dataset DataFrame. If `None`, will load using `dataset.load()` (default: `None`)
 - **`split`**: Dataset split to use if loading dataset (default: `"test"`)
 - **`sample_size`**: Number of samples to load from the dataset. If `None`, loads all samples (default: `None`)
 - **`seed`**: Seed for random number generator when sampling. If `None`, uses a random seed (default: `None`)
-- **`workers`**: Number of workers to use for parallel processing. If `0`, uses all available CPUs (default: `0`)
+- **`workers`**: Number of workers for a continuously filled thread pool. If `0`, uses all available CPUs (default: `0`)
 
 ### Evaluation Metrics
 

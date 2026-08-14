@@ -4,10 +4,9 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Callable, Iterable
 import pandas as pd
 from PIL import Image
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import os
 import logging
-from .helpers import BatchedIterator
 from tqdm import tqdm
 
 class QueryResult:
@@ -337,58 +336,92 @@ class DataLoader(ABC):
         """
         pass
 
-    def process_batch(self, batch_size: int, dataset: Iterable = None, split: str = "test", sample_size: int = None, seed: int = None, workers: int = 0) -> List[Dict[str, Any]]:
+    def process_batch(
+        self,
+        batch_size: int,
+        dataset: Iterable = None,
+        split: str = "test",
+        sample_size: int = None,
+        seed: int = None,
+        workers: int = 0,
+        on_batch: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
+    ) -> List[Dict[str, Any]]:
         """
-        Process a batch of items in parallel.
+        Process items in parallel with a continuously filled worker pool.
+
+        Keeps up to ``workers`` tasks in flight (no batch barrier). When
+        ``on_batch`` is set, completed items are streamed in chunks of
+        ``batch_size`` and are not retained in the returned list (saves RAM).
 
         Args:
-            batch_size: Number of items to process in each batch
+            batch_size: Insert/stream chunk size when ``on_batch`` is set;
+                otherwise unused for scheduling (kept for API compatibility)
             dataset: Optional pre-loaded dataset. If None, will load using dataset.load()
             split: Dataset split to use if loading dataset
             sample_size: Number of samples to load from the dataset (if None, load all samples)
             seed: Seed for random number generator (if None, use a random seed)
             workers: Number of workers to use for parallel processing (if 0, use all available CPUs)
+            on_batch: Optional callback invoked with each completed chunk
         Returns:
-            List of processed items ready for insertion
-        """ 
+            List of processed items ready for insertion (empty when ``on_batch`` is set)
+        """
         logging.debug("Starting Data Loader...")
 
-        # Load dataset if not provided
         if dataset is None:
             dataset = self.dataset.load(split=split, sample_size=sample_size, seed=seed)
 
-        # Get total count for progress bar if available
         total_items = len(dataset)
-
-        # get number of workers
         num_workers = workers if workers > 0 else os.cpu_count()
-        
-        # Process in parallel with progress bar
-        results = []
+        keep_results = on_batch is None
+        results: List[Dict[str, Any]] = []
+        chunk: List[Dict[str, Any]] = []
+        dataset_iter = iter(dataset)
+        exhausted = False
+
+        def _submit(executor, pending):
+            nonlocal exhausted
+            try:
+                item = next(dataset_iter)
+            except StopIteration:
+                exhausted = True
+                return
+            pending.add(executor.submit(self.process_item, item))
+
+        def _flush_chunk():
+            nonlocal chunk
+            if on_batch is not None and chunk:
+                on_batch(chunk)
+                chunk = []
+
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            # Create progress bar
             pbar = tqdm(
                 total=total_items,
                 desc="Processing items",
                 unit="item",
             )
-            
             try:
-                for batch in BatchedIterator(dataset, batch_size):
-                    futures = {
-                        executor.submit(self.process_item, item): item
-                        for item in batch
-                    }
+                pending = set()
+                while len(pending) < num_workers and not exhausted:
+                    _submit(executor, pending)
 
-                    for future in futures:
+                while pending:
+                    done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                    for future in done:
                         processed_item = future.result()
                         if processed_item is not None:
-                            results.append(processed_item)
+                            if keep_results:
+                                results.append(processed_item)
+                            else:
+                                chunk.append(processed_item)
+                                if len(chunk) >= batch_size:
+                                    _flush_chunk()
                         pbar.update(1)
+                        if not exhausted:
+                            _submit(executor, pending)
+                _flush_chunk()
             finally:
                 pbar.close()
-        
-        # return results
+
         return results
 
 class Query(ABC):
