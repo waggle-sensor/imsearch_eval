@@ -6,11 +6,12 @@ from .interfaces import (
 )
 from .evaluator import BenchmarkEvaluator
 from .helpers import BatchedIterator
-from .model_utils import ModelUtils, fuse_embeddings
+from .model_utils import ModelUtils, clip_logits_per_image, fuse_embeddings
 
 __all__ = [
     'VectorDBAdapter', 'ModelProvider', 'QueryResult', 
     'BenchmarkDataset', 'DataLoader', 'Config', 'Query',
-    'BenchmarkEvaluator', 'ModelUtils', 'fuse_embeddings', 'BatchedIterator'
+    'BenchmarkEvaluator', 'ModelUtils', 'fuse_embeddings',
+    'clip_logits_per_image', 'BatchedIterator'
 ]
 

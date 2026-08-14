@@ -21,7 +21,7 @@ import numpy as np
 from PIL import Image
 
 from ...framework.interfaces import ModelProvider
-from ...framework.model_utils import ModelUtils, fuse_embeddings
+from ...framework.model_utils import ModelUtils, clip_logits_per_image, fuse_embeddings
 
 
 def _check_triton_available():
@@ -194,31 +194,52 @@ class TritonModelUtils(ModelUtils):
             return None, None
         return text_embedding, image_embedding
 
-    def clip_image_text_score(self, query: str, image: Image.Image) -> float:
+    def get_clip_query_embedding(
+        self, text: str
+    ) -> Tuple[Optional[np.ndarray], Optional[float]]:
+        """
+        Encode query text once via Triton CLIP.
+
+        Returns (text_embedding, logit_scale) where logit_scale is
+        exp(model.logit_scale), matching HF CLIPModel logits_per_image.
+        On failure returns (None, None).
+        """
+        text_embedding, _, logit_scale = self._infer_clip(
+            text, image=None, request_logit_scale=True
+        )
+        if text_embedding is None or logit_scale is None:
+            return None, None
+        return text_embedding, logit_scale
+
+    def clip_image_text_score(
+        self,
+        query: str,
+        image: Image.Image,
+        text_embedding=None,
+        logit_scale=None,
+    ) -> float:
         """
         CLIP similarity between a text query and an image via Triton.
 
         Matches Hugging Face CLIPModel logits_per_image for a single pair:
         L2-normalize image/text embeddings, then multiply cosine by exp(logit_scale).
+
+        Pass precomputed ``text_embedding`` and ``logit_scale`` to skip the text
+        tower (empty text is sent so Triton only runs get_image_features).
         """
-        text_embedding, image_embedding, logit_scale = self._infer_clip(
-            query, image, request_logit_scale=True
-        )
-        if text_embedding is None or image_embedding is None or logit_scale is None:
-            return 0.0
+        if text_embedding is not None and logit_scale is not None:
+            _, image_embedding = self._infer_clip("", image)
+            if image_embedding is None:
+                return 0.0
+        else:
+            text_embedding, image_embedding, logit_scale = self._infer_clip(
+                query, image, request_logit_scale=True
+            )
+            if text_embedding is None or image_embedding is None or logit_scale is None:
+                return 0.0
 
-        text_emb = np.asarray(text_embedding, dtype=np.float32)
-        image_emb = np.asarray(image_embedding, dtype=np.float32)
-
-        text_norm = np.linalg.norm(text_emb)
-        image_norm = np.linalg.norm(image_emb)
-        if text_norm == 0.0 or image_norm == 0.0:
-            return 0.0
-
-        text_emb = text_emb / text_norm
-        image_emb = image_emb / image_norm
-        cosine = float(np.dot(image_emb, text_emb))
-        return cosine * float(logit_scale)
+        scores = clip_logits_per_image(text_embedding, [image_embedding], logit_scale)
+        return float(scores[0])
     
     def get_colbert_embedding(self, text: str) -> Optional[np.ndarray]:
         """

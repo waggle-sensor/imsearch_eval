@@ -36,6 +36,32 @@ def fuse_embeddings(img_emb: np.ndarray, txt_emb: np.ndarray, alpha: float = 0.5
     return (combined / norm).astype(np.float32)
 
 
+def clip_logits_per_image(text_embedding, image_vectors, logit_scale) -> np.ndarray:
+    """
+    Vectorized CLIP logits_per_image: cosine(image, text) * logit_scale.
+
+    ``image_vectors`` is (N, D); ``text_embedding`` is (D,).
+    Rows with missing or zero vectors score 0.0.
+    """
+    text = np.asarray(text_embedding, dtype=np.float32).reshape(-1)
+    images = np.asarray(image_vectors, dtype=np.float32)
+    if images.ndim == 1:
+        images = images.reshape(1, -1)
+    n = images.shape[0]
+    scores = np.zeros(n, dtype=np.float32)
+    text_norm = np.linalg.norm(text)
+    if text_norm == 0.0:
+        return scores
+    text = text / text_norm
+    img_norms = np.linalg.norm(images, axis=1)
+    valid = np.isfinite(img_norms) & (img_norms > 0)
+    if not np.any(valid):
+        return scores
+    images_n = images[valid] / img_norms[valid, None]
+    scores[valid] = (images_n @ text) * float(logit_scale)
+    return scores
+
+
 class ModelUtils(ABC):
     """
     Abstract interface for model utilities.

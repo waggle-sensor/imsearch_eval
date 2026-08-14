@@ -9,16 +9,11 @@ This module provides all Milvus-related adapters:
 import os
 import logging
 import time
-from io import BytesIO
 from itertools import islice
-from typing import List, Dict, Any, Optional, Callable
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
-import base64
+from typing import List, Dict, Any, Optional, Callable, Tuple
 
 import pandas as pd
 import numpy as np
-from PIL import Image
 
 try:
     from pymilvus import (
@@ -41,7 +36,7 @@ except ImportError:
     _TRITON_AVAILABLE = False
 
 from ...framework.interfaces import VectorDBAdapter, QueryResult, Query
-from ...framework.model_utils import ModelUtils
+from ...framework.model_utils import ModelUtils, clip_logits_per_image
 from .schema import (
     DENSE_VECTOR_FIELDS,
     PROTECTED_COLLECTIONS,
@@ -77,7 +72,8 @@ def _to_list(embedding) -> list:
 class MilvusQuery(Query):
     """
     Query class for Milvus that provides dual-dense + BM25 hybrid search
-    matching Sage Image Search production (app/query.py).
+    matching Sage Image Search production (app/query.py), including CLIP
+    rerank of the query text embedding against stored image_vector values.
     """
 
     def __init__(
@@ -113,6 +109,17 @@ class MilvusQuery(Query):
             self.model_utils = model_utils
 
         self._output_fields_cache: Dict[str, List[str]] = {}
+
+    def _clip_query_embedding(
+        self, near_text: str
+    ) -> Tuple[Optional[np.ndarray], Optional[float]]:
+        """Encode query text once; return (embedding, logit_scale)."""
+        if not self.model_utils:
+            return None, None
+        if hasattr(self.model_utils, "get_clip_query_embedding"):
+            return self.model_utils.get_clip_query_embedding(near_text)
+        embedding = self.model_utils.get_clip_embeddings(near_text, image=None)
+        return embedding, None
 
     def query(
         self,
@@ -154,31 +161,6 @@ class MilvusQuery(Query):
         self._output_fields_cache[collection_name] = names
         return names
 
-    def _load_image(self, link: str) -> Optional[Image.Image]:
-        """Load an image from a local path or HTTP(S) URL."""
-        if not link:
-            return None
-        try:
-            if link.startswith("http://") or link.startswith("https://"):
-                headers = {}
-                user = os.environ.get("SAGE_USER")
-                password = os.environ.get("SAGE_PASS")
-                if user and password:
-                    token = base64.b64encode(f"{user}:{password}".encode()).decode()
-                    headers["Authorization"] = f"Basic {token}"
-                request = Request(link, headers=headers)
-                with urlopen(request, timeout=30) as response:
-                    image = Image.open(BytesIO(response.read()))
-            else:
-                image = Image.open(link)
-            return image.convert("RGB")
-        except (HTTPError, URLError, OSError, ValueError) as e:
-            logging.debug(f"Failed to load image from {link}: {e}")
-            return None
-        except Exception as e:
-            logging.debug(f"Failed to load image from {link}: {e}")
-            return None
-
     def _extract_hit(
         self,
         hit,
@@ -198,7 +180,8 @@ class MilvusQuery(Query):
         for key, value in entity.items():
             if key == vector_field:
                 result["vector"] = value
-                continue
+                if key != "image_vector":
+                    continue
             if key == "location":
                 lat, lon = parse_wkt_point(value)
                 result["location"] = value
@@ -213,21 +196,34 @@ class MilvusQuery(Query):
         result["score"] = float(distance or 0.0)
         return result
 
-    def _rerank_hits(self, objects: List[dict], near_text: str) -> List[dict]:
-        """CLIP image-text rerank using the image at each hit's link field."""
-        if not self.model_utils or not hasattr(self.model_utils, "clip_image_text_score"):
+    def _rerank_hits(
+        self,
+        objects: List[dict],
+        text_embedding,
+        logit_scale,
+    ) -> List[dict]:
+        """CLIP rerank: query text embedding vs stored image_vector (logits_per_image)."""
+        if not objects:
+            return objects
+        if text_embedding is None or logit_scale is None:
             for obj in objects:
                 obj["rerank_score"] = 0.0
+                obj.pop("image_vector", None)
             return objects
 
-        for obj in objects:
-            image = self._load_image(obj.get("link") or "")
-            if image is None:
-                obj["rerank_score"] = 0.0
-            else:
-                obj["rerank_score"] = float(
-                    self.model_utils.clip_image_text_score(near_text, image)
-                )
+        dim = int(np.asarray(text_embedding, dtype=np.float32).reshape(-1).shape[0])
+        image_mat = np.zeros((len(objects), dim), dtype=np.float32)
+        for i, obj in enumerate(objects):
+            vec = obj.pop("image_vector", None)
+            if vec is None:
+                continue
+            arr = np.asarray(vec, dtype=np.float32).reshape(-1)
+            if arr.shape[0] == dim and np.all(np.isfinite(arr)):
+                image_mat[i] = arr
+
+        scores = clip_logits_per_image(text_embedding, image_mat, logit_scale)
+        for obj, score in zip(objects, scores):
+            obj["rerank_score"] = float(score)
         objects.sort(key=lambda x: x.get("rerank_score", 0.0), reverse=True)
         return objects
 
@@ -249,7 +245,7 @@ class MilvusQuery(Query):
         if not self.model_utils:
             raise ValueError("Model utils is required for vector queries with text input")
 
-        embedding = self.model_utils.get_clip_embeddings(near_text, image=None)
+        embedding, logit_scale = self._clip_query_embedding(near_text)
         if embedding is None:
             logging.error("Failed to generate embedding")
             return pd.DataFrame()
@@ -257,6 +253,8 @@ class MilvusQuery(Query):
         fields = list(output_fields) if output_fields is not None else self._scalar_output_fields(collection_name)
         if target_vector not in fields:
             fields = fields + [target_vector]
+        if rerank and "image_vector" not in fields:
+            fields = fields + ["image_vector"]
 
         results = self.milvus_client.search(
             collection_name=collection_name,
@@ -273,10 +271,11 @@ class MilvusQuery(Query):
             objects.append(self._extract_hit(hit, vector_field=target_vector))
 
         if rerank:
-            objects = self._rerank_hits(objects, near_text)
+            objects = self._rerank_hits(objects, embedding, logit_scale)
         else:
             for obj in objects:
                 obj.setdefault("rerank_score", 0.0)
+                obj.pop("image_vector", None)
 
         return pd.DataFrame(objects)
 
@@ -303,7 +302,8 @@ class MilvusQuery(Query):
     ) -> pd.DataFrame:
         """
         Hybrid CLIP image_vector + caption_vector + BM25 sparse search,
-        then optional Triton CLIP rerank (query text vs retrieved image).
+        then optional CLIP rerank of query text vs stored ``image_vector``
+        (logits_per_image). The query text tower runs once.
 
         Dense vs sparse uses ``query_alpha``. Within dense, ``clip_alpha``
         weights ``image_vector`` vs ``caption_vector``. Ablation flags omit
@@ -315,7 +315,7 @@ class MilvusQuery(Query):
         if alpha is not None:
             query_alpha = alpha
 
-        dense_embedding = self.model_utils.get_clip_embeddings(near_text, image=None)
+        dense_embedding, logit_scale = self._clip_query_embedding(near_text)
         if dense_embedding is None:
             logging.error("Failed to generate CLIP embedding")
             return pd.DataFrame()
@@ -390,6 +390,8 @@ class MilvusQuery(Query):
         fields = list(output_fields) if output_fields is not None else self._scalar_output_fields(collection_name)
         if diversity_field not in fields:
             fields = fields + [diversity_field]
+        if rerank and "image_vector" not in fields:
+            fields = fields + ["image_vector"]
 
         if len(reqs) == 1:
             results = self.milvus_client.search(
@@ -413,10 +415,11 @@ class MilvusQuery(Query):
         objects = [self._extract_hit(hit, vector_field=diversity_field) for hit in hit_list]
 
         if rerank:
-            objects = self._rerank_hits(objects, near_text)
+            objects = self._rerank_hits(objects, dense_embedding, logit_scale)
         else:
             for obj in objects:
                 obj.setdefault("rerank_score", 0.0)
+                obj.pop("image_vector", None)
 
         return pd.DataFrame(objects)
 

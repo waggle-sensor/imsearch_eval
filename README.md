@@ -143,6 +143,10 @@ imsearch_eval/
   - Parameters: `img_emb` (numpy array), `txt_emb` (numpy array), `alpha` (float, default: 0.5)
   - Returns: Normalized fused embedding vector
   - Useful for combining multimodal embeddings with a weighted average
+- **`clip_logits_per_image()`**: Vectorized CLIP `logits_per_image` scoring
+  - Parameters: `text_embedding` (D,), `image_vectors` (N, D), `logit_scale`
+  - Returns: scores of shape (N,): L2-normalize both sides, then `cosine * logit_scale`
+  - Rows with missing or zero vectors score `0.0`
 
 ### Available Adapters
 
@@ -151,7 +155,8 @@ imsearch_eval/
 - **`TritonModelUtils`**: Triton-based implementation of `ModelUtils` interface
   - `get_clip_embeddings()` — fused CLIP vector (Weaviate path)
   - `get_clip_embedding_pair()` — separate caption/image vectors (Milvus index)
-  - `clip_image_text_score()` — query-text vs image rerank score
+  - `get_clip_query_embedding()` — encode query text once; returns `(text_embedding, logit_scale)`
+  - `clip_image_text_score()` — query-text vs live image score (optional precomputed text embedding)
 - **`TritonModelProvider`**: Triton inference server model provider
 
 **Dependencies**: `tritonclient[grpc]`
@@ -170,7 +175,7 @@ imsearch_eval/
 
 - **`MilvusQuery`**: Implements `Query` interface for Milvus
   - Generic `query()` method routes to specific methods based on `query_method`
-  - Production-parity dual-dense hybrid: `image_vector` + `caption_vector` + BM25 `sparse`, then CLIP image-text rerank
+  - Production-parity dual-dense hybrid: `image_vector` + `caption_vector` + BM25 `sparse`, then CLIP rerank of the query text embedding against stored `image_vector`s (`logits_per_image`; no per-hit image I/O)
   - Provides methods: `clip_hybrid_query_dual_index()` (default), `clip_hybrid_query()` (alias), `vector_query()`
 - **`MilvusAdapter`**: Implements `VectorDBAdapter` interface for Milvus
   - Uses `MilvusQuery` internally for search operations
@@ -329,7 +334,7 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
 - **`collection_name`**: Name of the collection to search (default: `"default"`)
 - **`query_method`**: Method/type of query to perform (default: `None`)
   - **For Weaviate**: Can be `"clip_hybrid_query"`, `"hybrid_query"`, `"colbert_query"`, or a custom callable function
-  - **For Milvus**: Can be `"clip_hybrid_query_dual_index"` (default; dual-dense + BM25 + CLIP rerank), `"clip_hybrid_query"` (alias), `"vector_query"`, or a custom callable function
+  - **For Milvus**: Can be `"clip_hybrid_query_dual_index"` (default; dual-dense + BM25 + CLIP rerank on stored `image_vector`), `"clip_hybrid_query"` (alias), `"vector_query"`, or a custom callable function
   - **For other vector DBs**: Implement your own query types in your `Query` implementation
   - The `Query.query()` method routes to the appropriate implementation based on `query_method`
   - `query_method` can also be a callable function for custom query logic
