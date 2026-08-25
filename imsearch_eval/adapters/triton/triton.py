@@ -103,21 +103,6 @@ class TritonModelUtils(ModelUtils):
         else:
             raise ValueError(f"Unknown caption model name: {model_name}")
     
-    def _clip_infer_inputs(self, text: str, image: Optional[Image.Image] = None):
-        """Build CLIP InferInputs with a leading batch dim of 1 (max_batch_size > 0)."""
-        text_np = np.array([[text.encode("utf-8")]], dtype=object)
-        if image is not None:
-            image_np = np.expand_dims(np.asarray(image, dtype=np.float32), 0)
-        else:
-            image_np = np.zeros((1, 1, 1, 3), dtype=np.float32)
-        inputs = [
-            TritonClient.InferInput("text", list(text_np.shape), "BYTES"),
-            TritonClient.InferInput("image", list(image_np.shape), "FP32"),
-        ]
-        inputs[0].set_data_from_numpy(text_np)
-        inputs[1].set_data_from_numpy(image_np)
-        return inputs
-
     def _infer_clip(
         self,
         text: str,
@@ -129,7 +114,20 @@ class TritonModelUtils(ModelUtils):
 
         On failure returns (None, None) or (None, None, None) if request_logit_scale.
         """
-        inputs = self._clip_infer_inputs(text, image)
+        text_bytes = text.encode("utf-8")
+        text_np = np.array([text_bytes], dtype="object")
+
+        if image is not None:
+            image_np = np.array(image).astype(np.float32)
+        else:
+            image_np = np.zeros((1, 1, 3), dtype=np.float32)
+
+        inputs = [
+            TritonClient.InferInput("text", [1], "BYTES"),
+            TritonClient.InferInput("image", list(image_np.shape), "FP32"),
+        ]
+        inputs[0].set_data_from_numpy(text_np)
+        inputs[1].set_data_from_numpy(image_np)
 
         outputs = [
             TritonClient.InferRequestedOutput("text_embedding"),
@@ -356,26 +354,32 @@ class TritonModelUtils(ModelUtils):
         Returns:
             Generated caption string or None on error
         """
-        image_np = np.expand_dims(np.asarray(image, dtype=np.uint8), 0)
-        prompt_np = np.array([[prompt.encode("utf-8")]], dtype=object)
+        # Prepare inputs for Triton
+        image_width, image_height = image.size
+        image_np = np.array(image).astype(np.uint8)
+        task_prompt_bytes = prompt.encode("utf-8")
 
+        # Prepare inputs & outputs for Triton
+        # NOTE: if you enable max_batch_size, leading number is batch size, example [1,1] 1 is batch size
         inputs = [
-            TritonClient.InferInput("image", list(image_np.shape), "UINT8"),
-            TritonClient.InferInput("prompt", list(prompt_np.shape), "BYTES"),
+            TritonClient.InferInput("image", [image_height, image_width, 3], "UINT8"),
+            TritonClient.InferInput("prompt", [1], "BYTES"),
         ]
         outputs = [
             TritonClient.InferRequestedOutput("answer")
         ]
-        inputs[0].set_data_from_numpy(image_np)
-        inputs[1].set_data_from_numpy(prompt_np)
 
+        # Add tensors to inputs
+        inputs[0].set_data_from_numpy(image_np)
+        inputs[1].set_data_from_numpy(np.array([task_prompt_bytes], dtype="object"))
+
+        # Perform inference
         try:
             response = self.triton_client.infer(model_name="gemma3", inputs=inputs, outputs=outputs)
 
-            answer = response.as_numpy("answer").reshape(-1)[0]
-            answer_str = (
-                answer.decode("utf-8") if isinstance(answer, (bytes, np.bytes_)) else str(answer)
-            )
+            # Get the result
+            answer = response.as_numpy("answer")[0]
+            answer_str = answer.decode("utf-8")
 
             logging.info(f'[GEMMA3] Final Generated Description: {answer_str}')
             return answer_str
