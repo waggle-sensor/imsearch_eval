@@ -134,8 +134,11 @@ imsearch_eval/
   - Methods: `calculate_embedding()`, `generate_caption()`
 - **`BenchmarkDataset`**: Abstract interface for benchmark datasets
 - **`DataLoader`**: Abstract interface for loading data into vector DBs
+  - `process_item(item, *, force_insert=False)` may return an insertable dict, `None` (hard fail), or a soft-DLQ sentinel (`__dlq_soft__=True`, e.g. empty caption)
+  - `process_batch(...)` returns `(results, failures)`, streams successes via `on_batch`, and collects hard/soft failures (with optional `on_failure`) for retry by callers
 - **`Config`**: Abstract interface for configuration/hyperparameters
 - **`QueryResult`**: Container for query results
+- **`DLQ_SOFT_KEY`**: Sentinel key (`__dlq_soft__`) marking soft indexing failures that should not be inserted yet
 
 ### Helper Utilities (`imsearch_eval.framework.model_utils`)
 

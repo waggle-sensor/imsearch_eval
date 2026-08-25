@@ -1,13 +1,16 @@
 """Abstract interfaces for vector database and model providers."""
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Callable, Iterable
+from typing import List, Dict, Any, Optional, Callable, Iterable, Tuple
 import pandas as pd
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import os
 import logging
 from tqdm import tqdm
+
+# Soft-failure sentinel returned by process_item (caption empty); not inserted.
+DLQ_SOFT_KEY = "__dlq_soft__"
 
 class QueryResult:
     """Container for query results from a vector database."""
@@ -315,14 +318,20 @@ class DataLoader(ABC):
     def process_item(
         self,
         item: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        *,
+        force_insert: bool = False,
+    ) -> Optional[Dict[str, Any]]:
         """
         Process a single dataset item and prepare it for vector database insertion.
-        
+
         Args:
             item: Dictionary containing raw dataset item
+            force_insert: When True, skip soft-DLQ for empty captions and insert
+                with an empty caption (used after DLQ retries are exhausted).
         Returns:
-            Dictionary with 'properties' and optionally 'vector' keys for insertion
+            Insertable dict; None for hard failure; or a soft-DLQ sentinel dict
+            with ``__dlq_soft__=True`` when caption generation failed and
+            ``force_insert`` is False.
         """
         pass
     
@@ -345,13 +354,17 @@ class DataLoader(ABC):
         seed: int = None,
         workers: int = 0,
         on_batch: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
-    ) -> List[Dict[str, Any]]:
+        on_failure: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
         Process items in parallel with a continuously filled worker pool.
 
         Keeps up to ``workers`` tasks in flight (no batch barrier). When
         ``on_batch`` is set, completed items are streamed in chunks of
         ``batch_size`` and are not retained in the returned list (saves RAM).
+
+        Hard failures (``None`` / exceptions) and soft DLQ sentinels
+        (``__dlq_soft__=True``) are collected and not inserted.
 
         Args:
             batch_size: Insert/stream chunk size when ``on_batch`` is set;
@@ -361,9 +374,11 @@ class DataLoader(ABC):
             sample_size: Number of samples to load from the dataset (if None, load all samples)
             seed: Seed for random number generator (if None, use a random seed)
             workers: Number of workers to use for parallel processing (if 0, use all available CPUs)
-            on_batch: Optional callback invoked with each completed chunk
+            on_batch: Optional callback invoked with each completed success chunk
+            on_failure: Optional callback invoked for each hard/soft failure entry
         Returns:
-            List of processed items ready for insertion (empty when ``on_batch`` is set)
+            ``(results, failures)`` where ``results`` is empty when ``on_batch``
+            is set, and ``failures`` holds in-memory DLQ entries for retry.
         """
         logging.debug("Starting Data Loader...")
 
@@ -374,9 +389,42 @@ class DataLoader(ABC):
         num_workers = workers if workers > 0 else os.cpu_count()
         keep_results = on_batch is None
         results: List[Dict[str, Any]] = []
+        failures: List[Dict[str, Any]] = []
         chunk: List[Dict[str, Any]] = []
         dataset_iter = iter(dataset)
         exhausted = False
+        future_to_item: Dict[Any, Any] = {}
+
+        def _item_id(item: Any) -> str:
+            if not isinstance(item, dict):
+                return ""
+            for key in (
+                "image_id",
+                "inat24_file_name",
+                "inat24_image_id",
+                "query_id",
+            ):
+                val = item.get(key)
+                if val not in (None, ""):
+                    return str(val)
+            return ""
+
+        def _record_failure(
+            item: Any,
+            reason: str,
+            error: str,
+            item_id: str = "",
+        ) -> None:
+            entry = {
+                "item": item,
+                "reason": reason,
+                "error": error or "",
+                "attempt": 0,
+                "item_id": item_id or _item_id(item),
+            }
+            failures.append(entry)
+            if on_failure is not None:
+                on_failure(entry)
 
         def _submit(executor, pending):
             nonlocal exhausted
@@ -385,13 +433,23 @@ class DataLoader(ABC):
             except StopIteration:
                 exhausted = True
                 return
-            pending.add(executor.submit(self.process_item, item))
+            future = executor.submit(self.process_item, item)
+            future_to_item[future] = item
+            pending.add(future)
 
         def _flush_chunk():
             nonlocal chunk
             if on_batch is not None and chunk:
                 on_batch(chunk)
                 chunk = []
+
+        def _handle_success(processed_item: Dict[str, Any]) -> None:
+            if keep_results:
+                results.append(processed_item)
+            else:
+                chunk.append(processed_item)
+                if len(chunk) >= batch_size:
+                    _flush_chunk()
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             pbar = tqdm(
@@ -407,14 +465,46 @@ class DataLoader(ABC):
                 while pending:
                     done, pending = wait(pending, return_when=FIRST_COMPLETED)
                     for future in done:
-                        processed_item = future.result()
-                        if processed_item is not None:
-                            if keep_results:
-                                results.append(processed_item)
-                            else:
-                                chunk.append(processed_item)
-                                if len(chunk) >= batch_size:
-                                    _flush_chunk()
+                        item = future_to_item.pop(future, None)
+                        try:
+                            processed_item = future.result()
+                        except Exception as exc:
+                            logging.error(
+                                "Error processing item %s: %s",
+                                _item_id(item) or "unknown",
+                                exc,
+                            )
+                            _record_failure(
+                                item, "hard_fail", str(exc)
+                            )
+                            pbar.update(1)
+                            if not exhausted:
+                                _submit(executor, pending)
+                            continue
+
+                        if processed_item is None:
+                            _record_failure(
+                                item,
+                                "hard_fail",
+                                "process_item returned None",
+                            )
+                        elif (
+                            isinstance(processed_item, dict)
+                            and processed_item.get(DLQ_SOFT_KEY)
+                        ):
+                            _record_failure(
+                                item,
+                                processed_item.get("reason", "caption_failed"),
+                                processed_item.get(
+                                    "error", "empty caption from provider"
+                                ),
+                                item_id=str(
+                                    processed_item.get("item_id") or ""
+                                ),
+                            )
+                        else:
+                            _handle_success(processed_item)
+
                         pbar.update(1)
                         if not exhausted:
                             _submit(executor, pending)
@@ -422,7 +512,7 @@ class DataLoader(ABC):
             finally:
                 pbar.close()
 
-        return results
+        return results, failures
 
 class Query(ABC):
     """Abstract interface for query classes used by vector database adapters."""
