@@ -395,32 +395,41 @@ class DataLoader(ABC):
         exhausted = False
         future_to_item: Dict[Any, Any] = {}
 
-        def _item_id(item: Any) -> str:
+        def _image_id(item: Any) -> str:
             if not isinstance(item, dict):
                 return ""
             for key in (
                 "image_id",
                 "inat24_file_name",
                 "inat24_image_id",
-                "query_id",
             ):
                 val = item.get(key)
                 if val not in (None, ""):
                     return str(val)
             return ""
 
+        def _query_id(item: Any) -> str:
+            if not isinstance(item, dict):
+                return ""
+            val = item.get("query_id")
+            if val not in (None, ""):
+                return str(val)
+            return ""
+
         def _record_failure(
             item: Any,
             reason: str,
             error: str,
-            item_id: str = "",
+            image_id: str = "",
+            query_id: str = "",
         ) -> None:
             entry = {
                 "item": item,
                 "reason": reason,
                 "error": error or "",
                 "attempt": 0,
-                "item_id": item_id or _item_id(item),
+                "image_id": image_id or _image_id(item),
+                "query_id": query_id or _query_id(item),
             }
             failures.append(entry)
             if on_failure is not None:
@@ -471,7 +480,7 @@ class DataLoader(ABC):
                         except Exception as exc:
                             logging.error(
                                 "Error processing item %s: %s",
-                                _item_id(item) or "unknown",
+                                _image_id(item) or "unknown",
                                 exc,
                             )
                             _record_failure(
@@ -498,8 +507,11 @@ class DataLoader(ABC):
                                 processed_item.get(
                                     "error", "empty caption from provider"
                                 ),
-                                item_id=str(
-                                    processed_item.get("item_id") or ""
+                                image_id=str(
+                                    processed_item.get("image_id") or ""
+                                ),
+                                query_id=str(
+                                    processed_item.get("query_id") or ""
                                 ),
                             )
                         else:
