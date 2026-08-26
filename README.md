@@ -135,10 +135,11 @@ imsearch_eval/
 - **`BenchmarkDataset`**: Abstract interface for benchmark datasets
 - **`DataLoader`**: Abstract interface for loading data into vector DBs
   - `process_item(item, *, force_insert=False)` may return an insertable dict, `None` (hard fail), or a soft-DLQ sentinel (`__dlq_soft__=True`, e.g. empty caption)
-  - `process_batch(...)` returns `(results, failures)`, streams successes via `on_batch`, and collects hard/soft failures (with optional `on_failure`) for retry by callers
+  - `process_batch(...)` returns `(results, failures)`, streams successes via `on_batch`, and collects hard/soft failures (with optional `on_failure`) for retry by callers. Failure entries store `dataset_idx` (+ ids) only — reload rows with `load_dlq_item(dataset, idx)` so the DLQ never retains image payloads.
 - **`Config`**: Abstract interface for configuration/hyperparameters
 - **`QueryResult`**: Container for query results
 - **`DLQ_SOFT_KEY`**: Sentinel key (`__dlq_soft__`) marking soft indexing failures that should not be inserted yet
+- **`load_dlq_item`**: Reload a dataset row by index for DLQ retries
 
 ### Helper Utilities (`imsearch_eval.framework.model_utils`)
 

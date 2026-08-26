@@ -12,6 +12,22 @@ from tqdm import tqdm
 # Soft-failure sentinel returned by process_item (caption empty); not inserted.
 DLQ_SOFT_KEY = "__dlq_soft__"
 
+
+def load_dlq_item(dataset: Any, dataset_idx: int) -> Dict[str, Any]:
+    """
+    Reload a dataset row for DLQ retry.
+
+    Failures store only ``dataset_idx`` (no image payload) so the DLQ stays
+    small; this fetches the row from the on-disk/memory-mapped HF dataset.
+    """
+    row = dataset[int(dataset_idx)]
+    if isinstance(row, dict):
+        return row
+    if hasattr(row, "to_dict"):
+        return dict(row.to_dict())
+    return dict(row)
+
+
 class QueryResult:
     """Container for query results from a vector database."""
     
@@ -364,7 +380,9 @@ class DataLoader(ABC):
         ``batch_size`` and are not retained in the returned list (saves RAM).
 
         Hard failures (``None`` / exceptions) and soft DLQ sentinels
-        (``__dlq_soft__=True``) are collected and not inserted.
+        (``__dlq_soft__=True``) are collected and not inserted. Failure entries
+        store ``dataset_idx`` (and ids) only — not image payloads — so callers
+        can reload rows from ``dataset`` on retry via ``load_dlq_item``.
 
         Args:
             batch_size: Insert/stream chunk size when ``on_batch`` is set;
@@ -378,7 +396,7 @@ class DataLoader(ABC):
             on_failure: Optional callback invoked for each hard/soft failure entry
         Returns:
             ``(results, failures)`` where ``results`` is empty when ``on_batch``
-            is set, and ``failures`` holds in-memory DLQ entries for retry.
+            is set, and ``failures`` holds lightweight DLQ entries for retry.
         """
         logging.debug("Starting Data Loader...")
 
@@ -391,9 +409,11 @@ class DataLoader(ABC):
         results: List[Dict[str, Any]] = []
         failures: List[Dict[str, Any]] = []
         chunk: List[Dict[str, Any]] = []
-        dataset_iter = iter(dataset)
+        next_idx = 0
         exhausted = False
-        future_to_item: Dict[Any, Any] = {}
+        # In-flight map: future -> (dataset_idx, image_id, query_id). Do not
+        # retain the row here; the worker already holds the only PIL reference.
+        future_to_meta: Dict[Any, Tuple[int, str, str]] = {}
 
         def _image_id(item: Any) -> str:
             if not isinstance(item, dict):
@@ -417,33 +437,35 @@ class DataLoader(ABC):
             return ""
 
         def _record_failure(
-            item: Any,
+            dataset_idx: int,
             reason: str,
             error: str,
             image_id: str = "",
             query_id: str = "",
         ) -> None:
             entry = {
-                "item": item,
+                "dataset_idx": int(dataset_idx),
                 "reason": reason,
                 "error": error or "",
                 "attempt": 0,
-                "image_id": image_id or _image_id(item),
-                "query_id": query_id or _query_id(item),
+                "image_id": image_id or "",
+                "query_id": query_id or "",
             }
             failures.append(entry)
             if on_failure is not None:
                 on_failure(entry)
 
         def _submit(executor, pending):
-            nonlocal exhausted
-            try:
-                item = next(dataset_iter)
-            except StopIteration:
+            nonlocal next_idx, exhausted
+            if next_idx >= total_items:
                 exhausted = True
                 return
+            dataset_idx = next_idx
+            next_idx += 1
+            item = load_dlq_item(dataset, dataset_idx)
+            meta = (dataset_idx, _image_id(item), _query_id(item))
             future = executor.submit(self.process_item, item)
-            future_to_item[future] = item
+            future_to_meta[future] = meta
             pending.add(future)
 
         def _flush_chunk():
@@ -474,17 +496,23 @@ class DataLoader(ABC):
                 while pending:
                     done, pending = wait(pending, return_when=FIRST_COMPLETED)
                     for future in done:
-                        item = future_to_item.pop(future, None)
+                        dataset_idx, image_id, query_id = future_to_meta.pop(
+                            future, (-1, "", "")
+                        )
                         try:
                             processed_item = future.result()
                         except Exception as exc:
                             logging.error(
                                 "Error processing item %s: %s",
-                                _image_id(item) or "unknown",
+                                image_id or "unknown",
                                 exc,
                             )
                             _record_failure(
-                                item, "hard_fail", str(exc)
+                                dataset_idx,
+                                "hard_fail",
+                                str(exc),
+                                image_id=image_id,
+                                query_id=query_id,
                             )
                             pbar.update(1)
                             if not exhausted:
@@ -493,25 +521,27 @@ class DataLoader(ABC):
 
                         if processed_item is None:
                             _record_failure(
-                                item,
+                                dataset_idx,
                                 "hard_fail",
                                 "process_item returned None",
+                                image_id=image_id,
+                                query_id=query_id,
                             )
                         elif (
                             isinstance(processed_item, dict)
                             and processed_item.get(DLQ_SOFT_KEY)
                         ):
                             _record_failure(
-                                item,
+                                dataset_idx,
                                 processed_item.get("reason", "caption_failed"),
                                 processed_item.get(
                                     "error", "empty caption from provider"
                                 ),
                                 image_id=str(
-                                    processed_item.get("image_id") or ""
+                                    processed_item.get("image_id") or image_id
                                 ),
                                 query_id=str(
-                                    processed_item.get("query_id") or ""
+                                    processed_item.get("query_id") or query_id
                                 ),
                             )
                         else:
