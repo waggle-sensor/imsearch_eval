@@ -9,6 +9,8 @@ import os
 import logging
 from tqdm import tqdm
 
+from .image_utils import ensure_rgb
+
 # Soft-failure sentinel returned by process_item (caption empty); not inserted.
 DLQ_SOFT_KEY = "__dlq_soft__"
 
@@ -22,10 +24,16 @@ def load_dlq_item(dataset: Any, dataset_idx: int) -> Dict[str, Any]:
     """
     row = dataset[int(dataset_idx)]
     if isinstance(row, dict):
-        return row
-    if hasattr(row, "to_dict"):
-        return dict(row.to_dict())
-    return dict(row)
+        item = dict(row)
+    elif hasattr(row, "to_dict"):
+        item = dict(row.to_dict())
+    else:
+        item = dict(row)
+
+    image = item.get("image")
+    if isinstance(image, Image.Image):
+        item["image"] = ensure_rgb(image)
+    return item
 
 
 class QueryResult:

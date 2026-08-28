@@ -21,6 +21,7 @@ import numpy as np
 from PIL import Image
 
 from ...framework.interfaces import ModelProvider
+from ...framework.image_utils import ensure_rgb, prepare_llm_image
 from ...framework.model_utils import ModelUtils, clip_logits_per_image, fuse_embeddings
 
 
@@ -108,7 +109,7 @@ class TritonModelUtils(ModelUtils):
         """Build CLIP InferInputs with a leading batch dim of 1 (max_batch_size > 0)."""
         text_np = np.array([[text.encode("utf-8")]], dtype=object)
         if image is not None:
-            image_np = np.expand_dims(np.asarray(image, dtype=np.float32), 0)
+            image_np = np.expand_dims(np.asarray(ensure_rgb(image), dtype=np.float32), 0)
         else:
             image_np = np.zeros((1, 1, 1, 3), dtype=np.float32)
         inputs = [
@@ -311,7 +312,7 @@ class TritonModelUtils(ModelUtils):
         
         # Prepare image input
         if image is not None:
-            image_np = np.array(image).astype(np.float32)
+            image_np = np.array(ensure_rgb(image)).astype(np.float32)
         else:
             image_np = np.zeros((1, 1, 3), dtype=np.float32)
         
@@ -357,6 +358,7 @@ class TritonModelUtils(ModelUtils):
         Returns:
             Generated caption string or None on error
         """
+        image = prepare_llm_image(image)
         # Leading batch dim of 1 required when Triton max_batch_size > 0.
         image_np = np.expand_dims(np.asarray(image, dtype=np.uint8), 0)
         prompt_np = np.array([[prompt.encode("utf-8")]], dtype=object)
@@ -397,6 +399,7 @@ class TritonModelUtils(ModelUtils):
         Returns:
             Generated caption string or None on error
         """
+        image = prepare_llm_image(image)
         # Leading batch dim of 1 required when Triton max_batch_size > 0.
         image_np = np.expand_dims(np.asarray(image, dtype=np.uint8), 0)
         prompt_np = np.array([[prompt.encode("utf-8")]], dtype=object)

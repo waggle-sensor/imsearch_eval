@@ -12,7 +12,6 @@ import base64
 import logging
 import os
 from enum import Enum
-from io import BytesIO
 from typing import Optional, Union
 
 from PIL import Image
@@ -26,6 +25,7 @@ except ImportError:
     _NRP_AVAILABLE = False
 
 from ...framework.interfaces import ModelProvider
+from ...framework.image_utils import prepare_llm_image_bytes
 from ...framework.model_utils import ModelUtils
 
 
@@ -132,9 +132,8 @@ class NRPModelUtils(ModelUtils):
         except ValueError:
             raise ValueError(f"Unsupported NRP LLM Model: {model_name}")
 
-        buffer = BytesIO()
-        image.save(buffer, format="PNG")
-        image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        image_bytes, mime = prepare_llm_image_bytes(image)
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
         try:
             # Do not pass max_tokens per NRP docs (https://nrp.ai/documentation/userdocs/ai/llm-managed/)
@@ -149,7 +148,7 @@ class NRPModelUtils(ModelUtils):
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/png;base64,{image_b64}"
+                                    "url": f"data:image/{mime};base64,{image_b64}"
                                 },
                             },
                         ],
