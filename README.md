@@ -242,6 +242,8 @@ jpeg_bytes, mime = prepare_llm_image_bytes(pil_image)
 
 **Dependencies**: `openai`
 
+**Monitoring** (shared NRP gateway): [NRP LLM status](https://nrp.ai/llm-status/) · [Envoy LLMs Grafana](https://grafana.nrp-nautilus.io/d/ad8bzhl/envoy-llms?from=now-1h&to=now&timezone=browser&var-team_id=$__all&var-model=$__all&var-token=$__all)
+
 ### Evaluator (`imsearch_eval.framework.evaluator`)
 
 - **`BenchmarkEvaluator`**: Main evaluation class that works with any combination of adapters and benchmark datasets
