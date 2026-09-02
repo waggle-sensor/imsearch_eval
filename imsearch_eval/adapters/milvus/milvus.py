@@ -298,6 +298,7 @@ class MilvusQuery(Query):
         dense_search_params: Optional[dict] = None,
         sparse_search_params: Optional[dict] = None,
         alpha: Optional[float] = None,
+        retrieve_limit: Optional[int] = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -309,6 +310,10 @@ class MilvusQuery(Query):
         weights ``image_vector`` vs ``caption_vector``. Defaults match
         production H (0.65 / 0.7 → 46% image / 20% caption / 35% BM25).
         Ablation flags omit legs instead of sending a zero weight.
+
+        ``retrieve_limit`` is the ANN / hybrid pool size. After rerank the
+        DataFrame is sliced to ``limit`` (display/eval k). Unset or
+        ``retrieve_limit <= limit`` keeps today's single-k behavior.
         """
         if not self.model_utils:
             raise ValueError("Model utils required for CLIP hybrid query")
@@ -316,16 +321,24 @@ class MilvusQuery(Query):
         if alpha is not None:
             query_alpha = alpha
 
+        retrieve = (
+            retrieve_limit
+            if retrieve_limit is not None and retrieve_limit > limit
+            else limit
+        )
+
         dense_embedding, logit_scale = self._clip_query_embedding(near_text)
         if dense_embedding is None:
             logging.error("Failed to generate CLIP embedding")
             return pd.DataFrame()
         vector = _to_list(dense_embedding)
 
-        dense_search_params = dense_search_params or {
-            "metric_type": "COSINE",
-            "params": {"ef": 64},
-        }
+        if dense_search_params is None:
+            ef = max(64, retrieve) if retrieve > 64 else 64
+            dense_search_params = {
+                "metric_type": "COSINE",
+                "params": {"ef": ef},
+            }
         sparse_search_params = sparse_search_params or {"metric_type": "BM25"}
 
         reqs = []
@@ -337,7 +350,7 @@ class MilvusQuery(Query):
                     data=[vector],
                     anns_field=image_vector_field,
                     param=dense_search_params,
-                    limit=limit,
+                    limit=retrieve,
                 )
             )
             weights.append(query_alpha * clip_alpha)
@@ -352,7 +365,7 @@ class MilvusQuery(Query):
                     data=[vector],
                     anns_field=caption_vector_field,
                     param=dense_search_params,
-                    limit=limit,
+                    limit=retrieve,
                 )
             )
             weights.append(query_alpha * (1.0 - clip_alpha))
@@ -368,7 +381,7 @@ class MilvusQuery(Query):
                     data=[near_text],
                     anns_field=target_sparse_vector,
                     param=sparse_search_params,
-                    limit=limit,
+                    limit=retrieve,
                 )
             )
             weights.append(1.0 - query_alpha)
@@ -400,7 +413,7 @@ class MilvusQuery(Query):
                 data=single_search["data"],
                 anns_field=single_search["anns_field"],
                 search_params=single_search["search_params"],
-                limit=limit,
+                limit=retrieve,
                 output_fields=fields,
             )
         else:
@@ -408,7 +421,7 @@ class MilvusQuery(Query):
                 collection_name=collection_name,
                 reqs=reqs,
                 ranker=WeightedRanker(*weights),
-                limit=limit,
+                limit=retrieve,
                 output_fields=fields,
             )
 
@@ -422,6 +435,7 @@ class MilvusQuery(Query):
                 obj.setdefault("rerank_score", 0.0)
                 obj.pop("image_vector", None)
 
+        objects = objects[:limit]
         return pd.DataFrame(objects)
 
     def clip_hybrid_query(
