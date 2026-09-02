@@ -227,6 +227,39 @@ class MilvusQuery(Query):
         objects.sort(key=lambda x: x.get("rerank_score", 0.0), reverse=True)
         return objects
 
+    @staticmethod
+    def _rrf_fuse_hybrid(
+        objects: List[dict],
+        rrf_k: int = 60,
+    ) -> List[dict]:
+        """Mix CLIP rerank ranks with hybrid (BM25-inclusive) ranks via RRF.
+
+        ``score`` is the WeightedRanker fusion (image + caption + BM25).
+        CLIP logits stay on ``clip_score``; ``rerank_score`` becomes the RRF score.
+        """
+        if not objects:
+            return objects
+        n = len(objects)
+        clip_order = sorted(
+            range(n),
+            key=lambda i: objects[i].get("rerank_score", 0.0),
+            reverse=True,
+        )
+        hybrid_order = sorted(
+            range(n),
+            key=lambda i: objects[i].get("score", 0.0),
+            reverse=True,
+        )
+        clip_rank = {idx: rank + 1 for rank, idx in enumerate(clip_order)}
+        hybrid_rank = {idx: rank + 1 for rank, idx in enumerate(hybrid_order)}
+        for i, obj in enumerate(objects):
+            obj["clip_score"] = float(obj.get("rerank_score", 0.0) or 0.0)
+            obj["rerank_score"] = (
+                1.0 / (rrf_k + clip_rank[i]) + 1.0 / (rrf_k + hybrid_rank[i])
+            )
+        objects.sort(key=lambda x: x.get("rerank_score", 0.0), reverse=True)
+        return objects
+
     def vector_query(
         self,
         near_text: str,
@@ -299,6 +332,8 @@ class MilvusQuery(Query):
         sparse_search_params: Optional[dict] = None,
         alpha: Optional[float] = None,
         retrieve_limit: Optional[int] = None,
+        rerank_fusion: Optional[str] = None,
+        rrf_k: int = 60,
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -314,6 +349,10 @@ class MilvusQuery(Query):
         ``retrieve_limit`` is the ANN / hybrid pool size. After rerank the
         DataFrame is sliced to ``limit`` (display/eval k). Unset or
         ``retrieve_limit <= limit`` keeps today's single-k behavior.
+
+        ``rerank_fusion``: ``clip`` (default) sorts by CLIP logits only.
+        ``rrf`` Reciprocal Rank Fusion of CLIP ranks and hybrid ranks so
+        BM25 (inside WeightedRanker ``score``) is not discarded at rerank.
         """
         if not self.model_utils:
             raise ValueError("Model utils required for CLIP hybrid query")
@@ -430,6 +469,9 @@ class MilvusQuery(Query):
 
         if rerank:
             objects = self._rerank_hits(objects, dense_embedding, logit_scale)
+            fusion = (rerank_fusion or "clip").strip().lower()
+            if fusion == "rrf":
+                objects = self._rrf_fuse_hybrid(objects, rrf_k=rrf_k)
         else:
             for obj in objects:
                 obj.setdefault("rerank_score", 0.0)
