@@ -285,7 +285,7 @@ class MilvusQuery(Query):
         collection_name: str,
         target_vector: str = "image_vector",
         limit: int = 25,
-        query_alpha: float = 0.4,
+        query_alpha: float = 0.65,
         clip_alpha: float = 0.7,
         enable_image_vector: bool = True,
         enable_caption_vector: bool = True,
@@ -306,8 +306,9 @@ class MilvusQuery(Query):
         (logits_per_image). The query text tower runs once.
 
         Dense vs sparse uses ``query_alpha``. Within dense, ``clip_alpha``
-        weights ``image_vector`` vs ``caption_vector``. Ablation flags omit
-        legs instead of sending a zero weight.
+        weights ``image_vector`` vs ``caption_vector``. Defaults match
+        production H (0.65 / 0.7 → 46% image / 20% caption / 35% BM25).
+        Ablation flags omit legs instead of sending a zero weight.
         """
         if not self.model_utils:
             raise ValueError("Model utils required for CLIP hybrid query")
