@@ -2,15 +2,16 @@
 
 from .interfaces import (
     VectorDBAdapter, ModelProvider, QueryResult, BenchmarkDataset, 
-    DataLoader, Config, Query
+    DataLoader, Config, Query, DLQ_SOFT_KEY, load_dlq_item,
 )
 from .evaluator import BenchmarkEvaluator
 from .helpers import BatchedIterator
-from .model_utils import ModelUtils, fuse_embeddings
+from .model_utils import ModelUtils, clip_logits_per_image, fuse_embeddings
 
 __all__ = [
     'VectorDBAdapter', 'ModelProvider', 'QueryResult', 
-    'BenchmarkDataset', 'DataLoader', 'Config', 'Query',
-    'BenchmarkEvaluator', 'ModelUtils', 'fuse_embeddings', 'BatchedIterator'
+    'BenchmarkDataset', 'DataLoader', 'Config', 'Query', 'DLQ_SOFT_KEY',
+    'load_dlq_item',
+    'BenchmarkEvaluator', 'ModelUtils', 'fuse_embeddings',
+    'clip_logits_per_image', 'BatchedIterator'
 ]
-

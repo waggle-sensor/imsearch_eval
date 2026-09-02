@@ -108,6 +108,7 @@ The framework is organized into two main components:
 imsearch_eval/
 ├── framework/                    # Abstract interfaces and evaluation logic
 │   ├── interfaces.py            # VectorDBAdapter, ModelProvider, Query, BenchmarkDataset, etc.
+│   ├── image_utils.py           # Caption LLM image prep (RGB, optional byte limiting)
 │   ├── model_utils.py           # ModelUtils abstract interface
 │   └── evaluator.py            # BenchmarkEvaluator class
 │
@@ -134,8 +135,43 @@ imsearch_eval/
   - Methods: `calculate_embedding()`, `generate_caption()`
 - **`BenchmarkDataset`**: Abstract interface for benchmark datasets
 - **`DataLoader`**: Abstract interface for loading data into vector DBs
+  - `process_item(item, *, force_insert=False)` may return an insertable dict, `None` (hard fail), or a soft-DLQ sentinel (`__dlq_soft__=True`, e.g. empty caption)
+  - `process_batch(...)` returns `(results, failures)`, streams successes via `on_batch`, and collects hard/soft failures (with optional `on_failure`) for retry by callers. Failure entries store `dataset_idx` (+ ids) only — reload rows with `load_dlq_item(dataset, idx)` so the DLQ never retains image payloads.
 - **`Config`**: Abstract interface for configuration/hyperparameters
 - **`QueryResult`**: Container for query results
+- **`DLQ_SOFT_KEY`**: Sentinel key (`__dlq_soft__`) marking soft indexing failures that should not be inserted yet
+- **`load_dlq_item`**: Reload a dataset row by index for DLQ retries (converts images to RGB)
+
+### Image utilities
+
+`imsearch_eval.framework.image_utils` — shared caption-LLM image prep used by **NRP** and **Triton** caption paths (not CLIP indexing — CLIP uses `ensure_rgb` only).
+
+| Function | Purpose |
+|----------|---------|
+| `ensure_rgb()` | Convert PIL images to RGB (drops alpha / palette modes) |
+| `prepare_llm_image()` | PIL prep for Triton VLMs (gemma3, qwen2_5): RGB, optional resize/downscale |
+| `prepare_llm_image_bytes()` | JPEG encode for NRP/OpenAI-style multimodal APIs (replaces full-res PNG base64) |
+| `llm_image_byte_limiting_enabled()` | Read `LLM_IMAGE_BYTE_LIMITING` |
+
+**Environment variables** (provider-agnostic; apply to all caption LLM backends):
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `LLM_IMAGE_BYTE_LIMITING` | `false` | When `true`, apply side cap, downscale, and JPEG quality stepping |
+| `LLM_MAX_IMAGE_BYTES` | `12582912` (12 MiB) | Max payload when byte limiting is enabled |
+| `LLM_MAX_IMAGE_SIDE` | `6144` | Longest-side cap when byte limiting is enabled |
+
+When `LLM_IMAGE_BYTE_LIMITING=false` (default), caption paths only convert to RGB and encode as JPEG at quality 85 — full resolution is preserved. Enable byte limiting for large images that hit gateway payload limits (e.g. FireBench).
+
+```python
+from imsearch_eval.framework.image_utils import prepare_llm_image, prepare_llm_image_bytes
+
+# Triton / UINT8 tensor path
+image = prepare_llm_image(pil_image)
+
+# NRP / base64 JPEG path
+jpeg_bytes, mime = prepare_llm_image_bytes(pil_image)
+```
 
 ### Helper Utilities (`imsearch_eval.framework.model_utils`)
 
@@ -143,12 +179,22 @@ imsearch_eval/
   - Parameters: `img_emb` (numpy array), `txt_emb` (numpy array), `alpha` (float, default: 0.5)
   - Returns: Normalized fused embedding vector
   - Useful for combining multimodal embeddings with a weighted average
+- **`clip_logits_per_image()`**: Vectorized CLIP `logits_per_image` scoring
+  - Parameters: `text_embedding` (D,), `image_vectors` (N, D), `logit_scale`
+  - Returns: scores of shape (N,): L2-normalize both sides, then `cosine * logit_scale`
+  - Rows with missing or zero vectors score `0.0`
 
 ### Available Adapters
 
 #### Triton Adapters (`imsearch_eval.adapters.triton`)
 
 - **`TritonModelUtils`**: Triton-based implementation of `ModelUtils` interface
+  - `get_clip_embeddings()` — fused CLIP vector (Weaviate path)
+  - `get_clip_embedding_pair()` — separate caption/image vectors (Milvus index)
+  - `get_clip_query_embedding()` — encode query text once; returns `(text_embedding, logit_scale)`
+  - `clip_image_text_score()` — query-text vs live image score (optional precomputed text embedding)
+  - CLIP / Gemma InferInputs use a leading batch dim of 1 so Triton `max_batch_size > 0` + `dynamic_batching { }` can combine concurrent worker calls
+  - CLIP inputs use `ensure_rgb()` (full resolution); caption models (gemma3, qwen2_5) call `prepare_llm_image()` before inference
 - **`TritonModelProvider`**: Triton inference server model provider
 
 **Dependencies**: `tritonclient[grpc]`
@@ -166,12 +212,14 @@ imsearch_eval/
 #### Milvus Adapters (`imsearch_eval.adapters.milvus`)
 
 - **`MilvusQuery`**: Implements `Query` interface for Milvus
-  - Generic `query()` method routes to specific methods based on `query_method` parameter
-  - Supports hybrid search combining dense and sparse vectors (BM25)
-  - Provides methods: `clip_hybrid_query()`, `vector_query()`
+  - Generic `query()` method routes to specific methods based on `query_method`
+  - Production-parity dual-dense hybrid: `image_vector` + `caption_vector` + BM25 `sparse`, then CLIP rerank of the query text embedding against stored `image_vector`s (`logits_per_image`; no per-hit image I/O)
+  - Provides methods: `clip_hybrid_query_dual_index()` (default), `clip_hybrid_query()` (alias), `vector_query()`
 - **`MilvusAdapter`**: Implements `VectorDBAdapter` interface for Milvus
   - Uses `MilvusQuery` internally for search operations
-  - Supports multi-vector search with native hybrid search capabilities
+  - `insert_data(..., flush=False)` + `flush_collection()` for streamed indexing
+  - `build_benchmark_schema()` helper for dual-dense + BM25 collections
+- **Connection env**: `MILVUS_URI`, `MILVUS_TOKEN`, `MILVUS_DB` (falls back to `MILVUS_DB_NAME`)
 
 **Dependencies**: `pymilvus>=2.6.6`, `tritonclient[grpc]` (for embedding generation)
 
@@ -188,10 +236,13 @@ imsearch_eval/
 
 - **`NRPModelUtils`**: NRP-based implementation of `ModelUtils`
 - **`NRPModelProvider`**: Model provider for the [NRP Envoy AI Gateway](https://nrp.ai/documentation/userdocs/ai/llm-managed/#available-models)
+- Caption requests encode images as **JPEG base64** via `prepare_llm_image_bytes()` (not PNG). Byte limiting follows `LLM_IMAGE_BYTE_LIMITING` (see [Image utilities](#image-utilities)).
 
 **Caption models**: `gemma` (Gemma 4 on NRP; `gemma3` is no longer hosted), `qwen3`, `gpt-oss`, `kimi`, `glm-4.7`, `minimax-m2`, `glm-v`.
 
 **Dependencies**: `openai`
+
+**Monitoring** (shared NRP gateway): [NRP LLM status](https://nrp.ai/llm-status/) · [Envoy LLMs Grafana](https://grafana.nrp-nautilus.io/d/ad8bzhl/envoy-llms?from=now-1h&to=now&timezone=browser&var-team_id=$__all&var-model=$__all&var-token=$__all)
 
 ### Evaluator (`imsearch_eval.framework.evaluator`)
 
@@ -308,7 +359,7 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
    # Evaluate queries with parallel processing
    results, stats = evaluator.evaluate_queries(
        split="test",
-       query_batch_size=100,  # Number of queries per batch (default: 100)
+       query_batch_size=100,  # Kept for API compatibility; concurrency is workers
        workers=0,  # Number of parallel workers (0 = use all CPUs, default: 0)
        sample_size=None,  # Limit number of samples (None = all, default: None)
        seed=None  # Random seed for sampling (default: None)
@@ -325,7 +376,7 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
 - **`collection_name`**: Name of the collection to search (default: `"default"`)
 - **`query_method`**: Method/type of query to perform (default: `None`)
   - **For Weaviate**: Can be `"clip_hybrid_query"`, `"hybrid_query"`, `"colbert_query"`, or a custom callable function
-  - **For Milvus**: Can be `"clip_hybrid_query"`, `"vector_query"`, or a custom callable function
+  - **For Milvus**: Can be `"clip_hybrid_query_dual_index"` (default; dual-dense + BM25 + CLIP rerank on stored `image_vector`), `"clip_hybrid_query"` (alias), `"vector_query"`, or a custom callable function
   - **For other vector DBs**: Implement your own query types in your `Query` implementation
   - The `Query.query()` method routes to the appropriate implementation based on `query_method`
   - `query_method` can also be a callable function for custom query logic
@@ -337,12 +388,12 @@ Your `BenchmarkDataset.load()` must return a pandas `DataFrame`. **Column names 
 
 #### `evaluate_queries()` Parameters
 
-- **`query_batch_size`**: Number of queries to submit in one batch (default: `100`)
+- **`query_batch_size`**: Kept for API compatibility; in-flight concurrency is governed by `workers` (default: `100`)
 - **`dataset`**: Optional pre-loaded dataset DataFrame. If `None`, will load using `dataset.load()` (default: `None`)
 - **`split`**: Dataset split to use if loading dataset (default: `"test"`)
 - **`sample_size`**: Number of samples to load from the dataset. If `None`, loads all samples (default: `None`)
 - **`seed`**: Seed for random number generator when sampling. If `None`, uses a random seed (default: `None`)
-- **`workers`**: Number of workers to use for parallel processing. If `0`, uses all available CPUs (default: `0`)
+- **`workers`**: Number of workers for a continuously filled thread pool. If `0`, uses all available CPUs (default: `0`)
 
 ### Evaluation Metrics
 
@@ -428,6 +479,8 @@ Combine [imsearch_benchmaker](https://github.com/waggle-sensor/imsearch_benchmak
            # Your caption generation
            return caption
    ```
+
+   For multimodal caption backends, reuse `prepare_llm_image()` (PIL/tensor) or `prepare_llm_image_bytes()` (HTTP APIs) from `imsearch_eval.framework.image_utils` so RGB conversion and optional byte limiting stay consistent across providers.
 
 2. **Create ModelProvider**:
    ```python
@@ -545,6 +598,8 @@ model_provider = NRPModelProvider()
 caption = model_provider.generate_caption(image, prompt="Describe this image in detail.", model_name="gemma")
 ```
 
+For large images or gateway payload limits, set `LLM_IMAGE_BYTE_LIMITING=true` (and optionally tune `LLM_MAX_IMAGE_BYTES` / `LLM_MAX_IMAGE_SIDE`).
+
 ## Key Features
 
 - **Dataset-Agnostic**: Works with any dataset by implementing `BenchmarkDataset`
@@ -560,3 +615,4 @@ caption = model_provider.generate_caption(image, prompt="Describe this image in 
 - **MRR and Success@k**: Per-query reciprocal rank and hit indicator; aggregate as mean for MRR and Success@k (hit rate)
 - **Numeric Relevance Support**: Supports both binary (0/1) and numeric (0.0-1.0) relevance scores
 - **Accurate Metrics**: Only counts relevance for correctly retrieved results to ensure metric accuracy
+- **Caption LLM image prep**: Provider-agnostic RGB conversion and optional byte limiting for NRP and Triton caption models; DLQ retries reload rows via `load_dlq_item()` without retaining image payloads in memory

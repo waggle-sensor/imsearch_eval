@@ -18,11 +18,29 @@ except ImportError:
     WeaviateQuery = None
 
 try:
-    from .milvus import MilvusAdapter, MilvusQuery
-    _AVAILABLE_ADAPTERS['milvus'] = ['MilvusAdapter', 'MilvusQuery']
+    from .milvus import (
+        MilvusAdapter,
+        MilvusQuery,
+        build_benchmark_schema,
+        parse_wkt_point,
+        to_milvus_wkt_point,
+        to_milvus_timestamptz,
+    )
+    _AVAILABLE_ADAPTERS['milvus'] = [
+        'MilvusAdapter',
+        'MilvusQuery',
+        'build_benchmark_schema',
+        'parse_wkt_point',
+        'to_milvus_wkt_point',
+        'to_milvus_timestamptz',
+    ]
 except ImportError:
     MilvusAdapter = None
     MilvusQuery = None
+    build_benchmark_schema = None
+    parse_wkt_point = None
+    to_milvus_wkt_point = None
+    to_milvus_timestamptz = None
 
 try:
     from .huggingface import HuggingFaceDataset
@@ -56,7 +74,14 @@ if TritonModelProvider is not None:
 if WeaviateAdapter is not None:
     __all__.extend(['WeaviateAdapter', 'WeaviateQuery'])
 if MilvusAdapter is not None:
-    __all__.extend(['MilvusAdapter', 'MilvusQuery'])
+    __all__.extend([
+        'MilvusAdapter',
+        'MilvusQuery',
+        'build_benchmark_schema',
+        'parse_wkt_point',
+        'to_milvus_wkt_point',
+        'to_milvus_timestamptz',
+    ])
 if HuggingFaceDataset is not None:
     __all__.extend(['HuggingFaceDataset'])
 if NRPModelProvider is not None:

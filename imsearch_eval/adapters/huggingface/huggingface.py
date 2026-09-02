@@ -50,6 +50,11 @@ class HuggingFaceDataset(BenchmarkDataset):
         Returns:
             Huggingface Dataset
         """
+        # Empty string tokens produce illegal "Bearer " headers in huggingface_hub.
+        token = kwargs.get("token", None)
+        if token is not None and not str(token).strip():
+            kwargs.pop("token", None)
+
         dataset = load_dataset(self.dataset_name, split=split, **kwargs)
         if seed is not None:
             random_generator = random.Random(seed)
