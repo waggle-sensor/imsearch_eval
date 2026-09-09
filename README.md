@@ -251,7 +251,7 @@ jpeg_bytes, mime = prepare_llm_image_bytes(pil_image)
 - Supports parallel query processing with configurable workers
 - Automatically computes NDCG for all available score columns (e.g., `rerank_score`, `clip_score`, `score`, `distance`)
 - Supports numeric relevance scores (not just binary 0/1)
-- Only counts relevance for correctly retrieved results (results that belong to the query)
+- Only counts relevance for correctly retrieved results (results that belong to the query), including NDCG and MRR
 
 ## Usage
 
@@ -406,12 +406,12 @@ The evaluator computes the following metrics for each query:
 - **`accuracy`**: `correctly_returned / total_results` - Proportion of results that belong to the query
 - **`precision`**: `relevant_images / total_results` - Proportion of retrieved results that are relevant
 - **`recall`**: `relevant_images / relevant_in_dataset` - Proportion of relevant items in dataset that were retrieved
-- **`reciprocal_rank`**: 1 / (1-based rank of the first relevant result in the returned list); 0 if no relevant result in top-k. **MRR** = `query_stats_df["reciprocal_rank"].mean()` across queries.
+- **`reciprocal_rank`**: 1 / (1-based rank of the first **query-matched** relevant result in the returned list); 0 if no relevant result in top-k. **MRR** = `query_stats_df["reciprocal_rank"].mean()` across queries.
 - **`hit`**: 1 if at least one relevant result is in the results, else 0. **Success@k** (hit rate) = `query_stats_df["hit"].mean()` across queries. k is the evaluator's `limit` or the number of returned results.
-- **`{score_column}_NDCG`**: Normalized Discounted Cumulative Gain computed for each score column found in results (e.g., `rerank_score_NDCG`, `clip_score_NDCG`)
+- **`{score_column}_NDCG`**: Normalized Discounted Cumulative Gain computed for each score column found in results (e.g., `rerank_score_NDCG`, `clip_score_NDCG`), using query-matched relevance labels
 - **`diversity`**: Diversity as 1 − ILS (Intra-List Similarity). ILS is the average pairwise cosine similarity of the retrieved list; diversity = 1 − ILS, so higher means more diverse (less redundant) results. Computed when the result DataFrame has a vector column (default name `"vector"`; Weaviate and Milvus adapters include it). Set `vector_column=None` on the evaluator to disable.
 
-**Important**: Relevance is only counted for correctly retrieved results (results that belong to the query). This ensures that precision and recall metrics are accurate.
+**Important**: Relevance is only counted for correctly retrieved results (results that belong to the query). A stored label from another query is treated as 0. This applies to precision, recall, hit rate, NDCG, and MRR.
 
 ### Model Names
 
@@ -614,5 +614,5 @@ For large images or gateway payload limits, set `LLM_IMAGE_BYTE_LIMITING=true` (
 - **Multiple NDCG Scores**: Automatically computes NDCG for all available score columns in results
 - **MRR and Success@k**: Per-query reciprocal rank and hit indicator; aggregate as mean for MRR and Success@k (hit rate)
 - **Numeric Relevance Support**: Supports both binary (0/1) and numeric (0.0-1.0) relevance scores
-- **Accurate Metrics**: Only counts relevance for correctly retrieved results to ensure metric accuracy
+- **Accurate Metrics**: Only counts relevance for correctly retrieved results (including NDCG and MRR) to ensure metric accuracy
 - **Caption LLM image prep**: Provider-agnostic RGB conversion and optional byte limiting for NRP and Triton caption models; DLQ retries reload rows via `load_dlq_item()` without retaining image payloads in memory

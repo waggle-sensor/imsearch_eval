@@ -11,12 +11,37 @@ from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from .interfaces import VectorDBAdapter, ModelProvider, QueryResult, BenchmarkDataset
 from tqdm import tqdm
 
+def belongs_to_query_mask(
+    df: pd.DataFrame,
+    query_id_col: str,
+    queried_on_col: str,
+) -> pd.Series:
+    """True when a result record was labeled for the query that was searched."""
+    if df.empty or query_id_col not in df.columns or queried_on_col not in df.columns:
+        return pd.Series(False, index=df.index)
+    return df[query_id_col].eq(df[queried_on_col])
+
+
+def query_matched_relevance(
+    df: pd.DataFrame,
+    relevance_col: str,
+    query_id_col: str,
+    queried_on_col: str,
+) -> pd.Series:
+    """Relevance for the searched query only; 0 if the record belongs to another query."""
+    mask = belongs_to_query_mask(df, query_id_col, queried_on_col)
+    if relevance_col not in df.columns:
+        return pd.Series(0.0, index=df.index)
+    relevance = pd.to_numeric(df[relevance_col], errors="coerce").fillna(0.0)
+    return relevance.where(mask, 0.0)
+
+
 def compute_ndcg(df: pd.DataFrame, relevance_col: str, sortby: str = "rerank_score") -> float:
     """
     Compute Normalized Discounted Cumulative Gain (NDCG) using scikit-learn.
     Args:
         df: DataFrame containing search results with relevance labels
-        relevance_col: Column name containing relevance labels
+        relevance_col: Column name containing relevance labels for the searched query
         sortby: Column to sort by (e.g., "rerank_score")
     Returns:
         float: NDCG score
@@ -30,11 +55,13 @@ def compute_ndcg(df: pd.DataFrame, relevance_col: str, sortby: str = "rerank_sco
     # Extract true relevance labels (1 = relevant, 0 = irrelevant)
     if relevance_col not in df_sorted.columns:
         return 0.0
-    
-    y_true = df_sorted[relevance_col].values.reshape(1, -1)  # Must be 2D array
+
+    y_true = pd.to_numeric(df_sorted[relevance_col], errors="coerce").fillna(0.0).to_numpy().reshape(1, -1)
+    if float(np.nansum(y_true)) == 0.0:
+        return 0.0
 
     # Extract ranking scores (e.g., rerank_score or clip_score)
-    y_score = df_sorted[sortby].values.reshape(1, -1)  # Must be 2D array
+    y_score = pd.to_numeric(df_sorted[sortby], errors="coerce").fillna(0.0).to_numpy().reshape(1, -1)
 
     # Compute NDCG using Scikit-Learn
     return ndcg_score(y_true, y_score)
@@ -44,7 +71,7 @@ def compute_reciprocal_rank(df: pd.DataFrame, relevance_col: str, sortby: str = 
     Compute Reciprocal Rank.
     Args:
         df: DataFrame containing search results with relevance labels
-        relevance_col: Column name containing relevance labels
+        relevance_col: Column name containing relevance labels for the searched query
         sortby: Column to sort by (e.g., "rerank_score")
     Returns:
         float: Reciprocal Rank score
@@ -200,26 +227,29 @@ class BenchmarkEvaluator:
         # Count total results returned
         total_results = len(results_df)
 
-        # Check if result retrieval is correct and count relevant results
-        correct_retrieval = 0
-        relevant_results = 0
-        for _, row in results_df.iterrows():
-            # Check if this result belongs to the query
-            if row.get(f"queried_on_{query_id_col}") == row.get(query_id_col):
-                correct_retrieval += 1
-                relevant_results += row.get(relevance_col, 0)
+        # Credit relevance only when the returned record was labeled for this query.
+        queried_on_col = f"queried_on_{query_id_col}"
+        belongs_to_query = belongs_to_query_mask(results_df, query_id_col, queried_on_col)
+        matched_relevance = query_matched_relevance(
+            results_df, relevance_col, query_id_col, queried_on_col
+        )
+        correct_retrieval = int(belongs_to_query.sum())
+        relevant_results = float(matched_relevance.sum())
         incorrect_retrieval = total_results - correct_retrieval
         non_relevant_results = total_results - relevant_results
 
         # Get number of relevant results in dataset for this query
         relevant_in_dataset = dataset[dataset[query_id_col] == query_id][relevance_col].sum()
 
+        ranking_df = results_df.copy()
+        ranking_df[relevance_col] = matched_relevance
+
         # Compute NDCG to evaluate ranking
         # for each score column, compute NDCG and store in query_stats
         ndcg_scores = {}
         for col in self.score_columns:
-            if col in results_df.columns:
-                ndcg = compute_ndcg(results_df, relevance_col, sortby=col)
+            if col in ranking_df.columns:
+                ndcg = compute_ndcg(ranking_df, relevance_col, sortby=col)
                 ndcg_scores[f"{col}_NDCG"] = ndcg
 
         # Success: 1 if at least one relevant in results, else 0
@@ -228,8 +258,8 @@ class BenchmarkEvaluator:
         # Compute Reciprocal Rank to evaluate ranking
         rr_scores = {}
         for col in self.score_columns:
-            if col in results_df.columns:
-                rr = compute_reciprocal_rank(results_df, relevance_col, sortby=col)
+            if col in ranking_df.columns:
+                rr = compute_reciprocal_rank(ranking_df, relevance_col, sortby=col)
                 rr_scores[f"{col}_reciprocal_rank"] = rr
 
         # Compute diversity (1 - ILS) when vector column is present
